@@ -3,6 +3,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
 import { Home, Users, ScrollText, UserCheck, UserCog, CalendarClock } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -30,13 +31,12 @@ const navLinks: NavLink[] = [
   { href: "/admin/assignments", label: "Assignments", icon: <UserCheck className="h-5 w-5" />, roles: ['admin'] },
 ];
 
-// Mock current user role
-const currentUserRole: 'employee' | 'team_leader' | 'admin' = 'admin'; 
-
 export function MainNav({ isMobile = false, isCollapsed = false }: { isMobile?: boolean; isCollapsed?: boolean }) {
   const pathname = usePathname();
+  const { data: session } = useSession();
+  const currentUserRole = session?.user?.role ?? 'employee';
 
-  const filteredNavLinks = navLinks.filter(link => 
+  const filteredNavLinks = navLinks.filter(link =>
     !link.roles || link.roles.includes(currentUserRole)
   );
 

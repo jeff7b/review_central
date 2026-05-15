@@ -2,20 +2,29 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // By default, deny all reads and writes.
+
+    // Default: deny all client-side access.
+    // All application data access goes through the Firebase Admin SDK
+    // (server actions), which bypasses these rules. These rules are
+    // defense-in-depth against unauthorized direct client access.
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // This rule allows any authenticated user to read and write to any collection.
-    // For a production application, you should implement more granular security rules.
-    // For example, only allowing users to edit their own data:
-    // match /users/{userId} {
-    //   allow read, write: if request.auth != null && request.auth.uid == userId;
-    // }
-    match /{collection}/{docId} {
-      allow read, write: if request.auth != null;
+    // Questionnaires: any authenticated user may read (needed to complete reviews).
+    // Writes go through Admin SDK only.
+    match /questionnaires/{id} {
+      allow read: if request.auth != null;
     }
+
+    // Review cycles: any authenticated user may read.
+    // Writes go through Admin SDK only.
+    match /review-cycles/{id} {
+      allow read: if request.auth != null;
+    }
+
+    // Users, peer-review-assignments, and peer-reviews are sensitive.
+    // All access is restricted to the Admin SDK (server actions).
+    // No direct client-side read or write is permitted.
   }
 }

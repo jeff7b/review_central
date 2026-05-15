@@ -2,6 +2,7 @@
 'use server';
 
 import { adminDb } from '@/lib/firebase-admin';
+import { requireAdminSession } from '@/lib/auth';
 import type { Questionnaire } from '@/types';
 import { Timestamp } from 'firebase-admin/firestore';
 import { revalidatePath } from 'next/cache';
@@ -11,6 +12,7 @@ import { revalidatePath } from 'next/cache';
  * @returns A promise that resolves to an array of the latest Questionnaire objects.
  */
 export async function getLatestQuestionnairesAction(): Promise<Questionnaire[]> {
+  await requireAdminSession();
   try {
     const snapshot = await adminDb.collection('questionnaires').get();
     if (snapshot.empty) {
@@ -59,6 +61,7 @@ export async function getLatestQuestionnairesAction(): Promise<Questionnaire[]> 
  * @returns A promise that resolves to an array of active Questionnaire objects.
  */
 export async function getActiveQuestionnairesAction(type: 'self' | 'peer'): Promise<Questionnaire[]> {
+    await requireAdminSession();
     try {
       const snapshot = await adminDb.collection('questionnaires')
           .where('isActive', '==', true)
@@ -112,6 +115,7 @@ export async function getActiveQuestionnairesAction(type: 'self' | 'peer'): Prom
 export async function saveQuestionnaireAction(
   data: Partial<Omit<Questionnaire, 'createdAt' | 'updatedAt'>> & Pick<Questionnaire, 'name' | 'type' | 'questions'>
 ) {
+  await requireAdminSession();
   const questionnairesRef = adminDb.collection('questionnaires');
   const now = Timestamp.now();
 
@@ -163,6 +167,7 @@ export async function saveQuestionnaireAction(
  * @param templateId The templateId of the questionnaire to deactivate.
  */
 export async function deactivateQuestionnaireTemplateAction(templateId: string) {
+    await requireAdminSession();
     const batch = adminDb.batch();
     const snapshot = await adminDb.collection('questionnaires').where('templateId', '==', templateId).get();
     

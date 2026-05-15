@@ -1,9 +1,14 @@
 import type {NextConfig} from 'next';
 
 const nextConfig: NextConfig = {
-  /* config options here */
-  allowedDevOrigins: ['9000-firebase-studio-1749725579144.cluster-zumahodzirciuujpqvsniawo3o.cloudworkstations.dev','studio.firebase.google.com', '*.cloudworkstations.dev', '*.local-origin.dev'],
-  // crossOrigin: 'anonymous',
+  // Cloud Workstation origins are only needed during local development
+  ...(process.env.NODE_ENV === 'development' && {
+    allowedDevOrigins: [
+      '*.cloudworkstations.dev',
+      '*.local-origin.dev',
+      'studio.firebase.google.com',
+    ],
+  }),
   typescript: {
     ignoreBuildErrors: true,
   },
@@ -19,6 +24,20 @@ const nextConfig: NextConfig = {
         pathname: '/**',
       },
     ],
+  },
+  async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: [
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'X-Frame-Options', value: 'DENY' },
+          { key: 'X-XSS-Protection', value: '1; mode=block' },
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+        ],
+      },
+    ];
   },
 };
 

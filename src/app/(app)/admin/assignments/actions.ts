@@ -2,6 +2,7 @@
 'use server';
 
 import { adminDb } from '@/lib/firebase-admin';
+import { requireAdminSession } from '@/lib/auth';
 import type { PeerReviewAssignment, User } from '@/types';
 import { Timestamp } from 'firebase-admin/firestore';
 import { revalidatePath } from 'next/cache';
@@ -17,6 +18,7 @@ export async function saveAssignmentAction(
     reviewer: User;
   }
 ) {
+  await requireAdminSession();
   const assignmentsRef = adminDb.collection('peer-review-assignments');
   const now = Timestamp.now();
 
@@ -57,6 +59,7 @@ export async function saveAssignmentAction(
  * @returns A promise resolving to an array of PeerReviewAssignment objects.
  */
 export async function getAssignmentsByCycleAction(reviewCycleId: string): Promise<PeerReviewAssignment[]> {
+  await requireAdminSession();
   if (!reviewCycleId) return [];
   try {
     const snapshot = await adminDb.collection('peer-review-assignments')
@@ -84,6 +87,7 @@ export async function getAssignmentsByCycleAction(reviewCycleId: string): Promis
  * @param assignmentId The ID of the assignment to delete.
  */
 export async function deleteAssignmentAction(assignmentId: string) {
+  await requireAdminSession();
   try {
     await adminDb.collection('peer-review-assignments').doc(assignmentId).delete();
     revalidatePath('/admin/assignments');

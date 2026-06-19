@@ -2,6 +2,7 @@
 'use server';
 
 import { adminDb } from '@/lib/firebase-admin';
+import { requireAdminSession } from '@/lib/auth';
 import type { ReviewCycle } from '@/types';
 import { Timestamp } from 'firebase-admin/firestore';
 import { revalidatePath } from 'next/cache';
@@ -11,6 +12,7 @@ import { revalidatePath } from 'next/cache';
  * @param data The review cycle data.
  */
 export async function saveReviewCycleAction(data: Omit<ReviewCycle, 'createdAt' | 'updatedAt' | 'id'> & { id?: string }) {
+  await requireAdminSession();
   const cyclesRef = adminDb.collection('review-cycles');
   const now = Timestamp.now();
 
@@ -36,6 +38,7 @@ export async function saveReviewCycleAction(data: Omit<ReviewCycle, 'createdAt' 
  * @returns A promise resolving to an array of ReviewCycle objects.
  */
 export async function getReviewCyclesAction(): Promise<ReviewCycle[]> {
+  await requireAdminSession();
   try {
     const snapshot = await adminDb.collection('review-cycles').orderBy('startDate', 'desc').get();
     if (snapshot.empty) return [];
@@ -63,6 +66,7 @@ export async function getReviewCyclesAction(): Promise<ReviewCycle[]> {
  * @returns A promise resolving to an array of active ReviewCycle objects.
  */
 export async function getActiveReviewCyclesAction(): Promise<ReviewCycle[]> {
+    await requireAdminSession();
     try {
       const snapshot = await adminDb.collection('review-cycles')
           .where('status', '==', 'active')

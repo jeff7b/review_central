@@ -2,6 +2,7 @@
 'use server';
 
 import { adminDb } from '@/lib/firebase-admin';
+import { requireAdminSession } from '@/lib/auth';
 import type { User } from '@/types';
 import { revalidatePath } from 'next/cache';
 
@@ -10,6 +11,7 @@ import { revalidatePath } from 'next/cache';
  * @returns A promise that resolves to an array of User objects.
  */
 export async function getUsersAction(): Promise<User[]> {
+  await requireAdminSession();
   try {
     const snapshot = await adminDb.collection('users').orderBy('name').get();
     if (snapshot.empty) {
@@ -33,6 +35,7 @@ export async function getUsersAction(): Promise<User[]> {
  * @param user The user data to save. Can include an ID for updates.
  */
 export async function saveUserAction(user: Omit<User, 'id'> & { id?: string }) {
+  await requireAdminSession();
   const usersRef = adminDb.collection('users');
   
   try {
@@ -77,6 +80,7 @@ export async function saveUserAction(user: Omit<User, 'id'> & { id?: string }) {
  * @param userId The ID of the user to delete.
  */
 export async function deleteUserAction(userId: string) {
+  await requireAdminSession();
   try {
     await adminDb.collection('users').doc(userId).delete();
     revalidatePath('/admin/staff');

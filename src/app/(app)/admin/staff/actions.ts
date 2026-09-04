@@ -5,6 +5,17 @@ import { adminDb } from '@/lib/firebase-admin';
 import { requireAdminSession } from '@/lib/auth';
 import type { User } from '@/types';
 import { revalidatePath } from 'next/cache';
+import { z } from 'zod';
+
+const SaveUserSchema = z.object({
+  id: z.string().optional(),
+  name: z.string().trim().min(1, 'Name is required').max(100),
+  email: z.string().trim().email('Invalid email address'),
+  role: z.enum(['employee', 'team_leader', 'admin']),
+  avatarUrl: z.string().url().optional().or(z.literal('')),
+});
+
+const UserIdSchema = z.string().min(1, 'User ID is required');
 
 /**
  * Fetches all users from the 'users' collection.
@@ -36,16 +47,17 @@ export async function getUsersAction(): Promise<User[]> {
  */
 export async function saveUserAction(user: Omit<User, 'id'> & { id?: string }) {
   await requireAdminSession();
+  const validatedUser = SaveUserSchema.parse(user);
   const usersRef = adminDb.collection('users');
   
   try {
-    if (user.id) {
+    if (validatedUser.id) {
       // Update existing user
-      const userDocRef = usersRef.doc(user.id);
-      await userDocRef.update({ ...user, email: user.email.toLowerCase() });
+      const userDocRef = usersRef.doc(validatedUser.id);
+      await userDocRef.update({ ...validatedUser, email: validatedUser.email.toLowerCase() });
     } else {
       // Create new user
-      const finalUserEmail = user.email.toLowerCase();
+      const finalUserEmail = validatedUser.email.toLowerCase();
 
       // Check for email uniqueness
       const querySnapshot = await usersRef.where('email', '==', finalUserEmail).limit(1).get();
@@ -54,14 +66,14 @@ export async function saveUserAction(user: Omit<User, 'id'> & { id?: string }) {
       }
 
       const newDocRef = usersRef.doc();
-      const initials = user.name.split(' ').map(n => n[0]).join('').toUpperCase();
+      const initials = validatedUser.name.split(' ').map(n => n[0]).join('').toUpperCase();
       
       await newDocRef.set({
-        ...user,
+        ...validatedUser,
         id: newDocRef.id,
         email: finalUserEmail,
         // Provide a default placeholder avatar if none is given
-        avatarUrl: user.avatarUrl || `https://placehold.co/100x100.png?text=${initials}`
+        avatarUrl: validatedUser.avatarUrl || `https://placehold.co/100x100.png?text=${initials}`
       });
     }
     revalidatePath('/admin/staff');
@@ -81,8 +93,9 @@ export async function saveUserAction(user: Omit<User, 'id'> & { id?: string }) {
  */
 export async function deleteUserAction(userId: string) {
   await requireAdminSession();
+  const validatedUserId = UserIdSchema.parse(userId);
   try {
-    await adminDb.collection('users').doc(userId).delete();
+    await adminDb.collection('users').doc(validatedUserId).delete();
     revalidatePath('/admin/staff');
   } catch (error) {
     console.error("Error deleting user:", error);

@@ -6,6 +6,16 @@ import { requireAdminSession } from '@/lib/auth';
 import type { ReviewCycle } from '@/types';
 import { Timestamp } from 'firebase-admin/firestore';
 import { revalidatePath } from 'next/cache';
+import { z } from 'zod';
+
+const SaveReviewCycleSchema = z.object({
+  id: z.string().optional(),
+  name: z.string().trim().min(1, 'Name is required').max(100),
+  startDate: z.string().min(1, 'Start date is required'),
+  endDate: z.string().min(1, 'End date is required'),
+  participantIds: z.array(z.string()),
+  status: z.enum(['draft', 'active', 'closed']),
+});
 
 /**
  * Saves a new or updates an existing review cycle.
@@ -13,18 +23,19 @@ import { revalidatePath } from 'next/cache';
  */
 export async function saveReviewCycleAction(data: Omit<ReviewCycle, 'createdAt' | 'updatedAt' | 'id'> & { id?: string }) {
   await requireAdminSession();
+  const validated = SaveReviewCycleSchema.parse(data);
   const cyclesRef = adminDb.collection('review-cycles');
   const now = Timestamp.now();
 
-  if (data.id) {
+  if (validated.id) {
     // Update existing cycle
-    const docRef = cyclesRef.doc(data.id);
-    await docRef.update({ ...data, updatedAt: now });
+    const docRef = cyclesRef.doc(validated.id);
+    await docRef.update({ ...validated, updatedAt: now });
   } else {
     // Create new cycle
     const newDocRef = cyclesRef.doc();
     await newDocRef.set({
-      ...data,
+      ...validated,
       id: newDocRef.id,
       createdAt: now,
       updatedAt: now,

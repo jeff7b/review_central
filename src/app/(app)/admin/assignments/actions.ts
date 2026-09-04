@@ -6,6 +6,28 @@ import { requireAdminSession } from '@/lib/auth';
 import type { PeerReviewAssignment, User } from '@/types';
 import { Timestamp } from 'firebase-admin/firestore';
 import { revalidatePath } from 'next/cache';
+import { z } from 'zod';
+
+const UserSummarySchema = z.object({
+  id: z.string().min(1, 'User ID is required'),
+  name: z.string().min(1, 'User name is required'),
+  email: z.string().optional(),
+  avatarUrl: z.string().optional(),
+  role: z.string().optional(),
+});
+
+const SaveAssignmentSchema = z.object({
+  id: z.string().optional(),
+  reviewCycleId: z.string().min(1, 'Review cycle ID is required'),
+  reviewee: UserSummarySchema,
+  reviewer: UserSummarySchema,
+  questionnaireId: z.string().min(1, 'Questionnaire ID is required'),
+  status: z.enum(['pending', 'in_progress', 'completed', 'declined']),
+  dueDate: z.string().min(1, 'Due date is required'),
+});
+
+const CycleIdSchema = z.string().min(1, 'Review cycle ID is required');
+const AssignmentIdSchema = z.string().min(1, 'Assignment ID is required');
 
 /**
  * Saves a peer review assignment.
@@ -19,26 +41,27 @@ export async function saveAssignmentAction(
   }
 ) {
   await requireAdminSession();
+  const validated = SaveAssignmentSchema.parse(data);
   const assignmentsRef = adminDb.collection('peer-review-assignments');
   const now = Timestamp.now();
 
   const assignmentPayload = {
-    reviewCycleId: data.reviewCycleId,
-    revieweeId: data.reviewee.id,
-    revieweeName: data.reviewee.name,
-    revieweeAvatarUrl: data.reviewee.avatarUrl || '',
-    reviewerId: data.reviewer.id,
-    reviewerName: data.reviewer.name,
-    reviewerAvatarUrl: data.reviewer.avatarUrl || '',
-    questionnaireId: data.questionnaireId,
-    status: data.status,
-    dueDate: data.dueDate,
+    reviewCycleId: validated.reviewCycleId,
+    revieweeId: validated.reviewee.id,
+    revieweeName: validated.reviewee.name,
+    revieweeAvatarUrl: validated.reviewee.avatarUrl || '',
+    reviewerId: validated.reviewer.id,
+    reviewerName: validated.reviewer.name,
+    reviewerAvatarUrl: validated.reviewer.avatarUrl || '',
+    questionnaireId: validated.questionnaireId,
+    status: validated.status,
+    dueDate: validated.dueDate,
     updatedAt: now,
   };
 
-  if (data.id) {
+  if (validated.id) {
     // Update existing assignment
-    const docRef = assignmentsRef.doc(data.id);
+    const docRef = assignmentsRef.doc(validated.id);
     await docRef.update(assignmentPayload);
   } else {
     // Create new assignment
@@ -60,10 +83,10 @@ export async function saveAssignmentAction(
  */
 export async function getAssignmentsByCycleAction(reviewCycleId: string): Promise<PeerReviewAssignment[]> {
   await requireAdminSession();
-  if (!reviewCycleId) return [];
+  const validatedCycleId = CycleIdSchema.parse(reviewCycleId);
   try {
     const snapshot = await adminDb.collection('peer-review-assignments')
-      .where('reviewCycleId', '==', reviewCycleId)
+      .where('reviewCycleId', '==', validatedCycleId)
       .get();
     
     if (snapshot.empty) return [];
@@ -88,8 +111,9 @@ export async function getAssignmentsByCycleAction(reviewCycleId: string): Promis
  */
 export async function deleteAssignmentAction(assignmentId: string) {
   await requireAdminSession();
+  const validatedId = AssignmentIdSchema.parse(assignmentId);
   try {
-    await adminDb.collection('peer-review-assignments').doc(assignmentId).delete();
+    await adminDb.collection('peer-review-assignments').doc(validatedId).delete();
     revalidatePath('/admin/assignments');
   } catch (error) {
     console.error('Error deleting assignment:', error);

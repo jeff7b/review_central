@@ -2,10 +2,26 @@
 'use server';
 
 import { adminDb } from '@/lib/firebase-admin';
-import { requireAdminSession } from '@/lib/auth';
+import { requireAdminSession, requireUserSession } from '@/lib/auth';
 import type { Questionnaire } from '@/types';
 import { Timestamp } from 'firebase-admin/firestore';
 import { revalidatePath } from 'next/cache';
+import { z } from 'zod';
+
+const QuestionSchema = z.object({
+  id: z.string().min(1),
+  text: z.string().trim().min(1, 'Question text is required'),
+  order: z.number().int().nonnegative(),
+});
+
+const SaveQuestionnaireSchema = z.object({
+  id: z.string().optional(),
+  templateId: z.string().optional(),
+  name: z.string().trim().min(1, 'Name is required').max(100),
+  description: z.string().optional(),
+  type: z.enum(['self', 'peer']),
+  questions: z.array(QuestionSchema).min(1, 'At least one question is required'),
+});
 
 /**
  * Fetches the latest version of each questionnaire template.
@@ -61,11 +77,12 @@ export async function getLatestQuestionnairesAction(): Promise<Questionnaire[]> 
  * @returns A promise that resolves to an array of active Questionnaire objects.
  */
 export async function getActiveQuestionnairesAction(type: 'self' | 'peer'): Promise<Questionnaire[]> {
-    await requireAdminSession();
+    await requireUserSession();
+    const validatedType = z.enum(['self', 'peer']).parse(type);
     try {
       const snapshot = await adminDb.collection('questionnaires')
           .where('isActive', '==', true)
-          .where('type', '==', type)
+          .where('type', '==', validatedType)
           .orderBy('name', 'asc')
           .get();
 
@@ -116,12 +133,13 @@ export async function saveQuestionnaireAction(
   data: Partial<Omit<Questionnaire, 'createdAt' | 'updatedAt'>> & Pick<Questionnaire, 'name' | 'type' | 'questions'>
 ) {
   await requireAdminSession();
+  const validated = SaveQuestionnaireSchema.parse(data);
   const questionnairesRef = adminDb.collection('questionnaires');
   const now = Timestamp.now();
 
-  // If data.id exists, we are creating a new version of an existing questionnaire.
-  if (data.id && data.templateId) {
-    const oldDocRef = questionnairesRef.doc(data.id);
+  // If validated.id exists, we are creating a new version of an existing questionnaire.
+  if (validated.id && validated.templateId) {
+    const oldDocRef = questionnairesRef.doc(validated.id);
     const newDocRef = questionnairesRef.doc(); // Create a new document for the new version
 
     await adminDb.runTransaction(async (transaction) => {
@@ -135,7 +153,7 @@ export async function saveQuestionnaireAction(
 
       // Create the new version
       transaction.set(newDocRef, {
-        ...data,
+        ...validated,
         id: newDocRef.id,
         version: (oldDoc.data()?.version || 0) + 1,
         isActive: true,
@@ -148,7 +166,7 @@ export async function saveQuestionnaireAction(
     const templateId = newDocRef.id; // Use the first document's ID as the templateId
 
     await newDocRef.set({
-      ...data,
+      ...validated,
       id: newDocRef.id,
       templateId: templateId,
       version: 1,
@@ -168,8 +186,9 @@ export async function saveQuestionnaireAction(
  */
 export async function deactivateQuestionnaireTemplateAction(templateId: string) {
     await requireAdminSession();
+    const validatedTemplateId = z.string().min(1).parse(templateId);
     const batch = adminDb.batch();
-    const snapshot = await adminDb.collection('questionnaires').where('templateId', '==', templateId).get();
+    const snapshot = await adminDb.collection('questionnaires').where('templateId', '==', validatedTemplateId).get();
     
     if (snapshot.empty) return;
 

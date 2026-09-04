@@ -12,6 +12,7 @@
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
+import {requireUserSession} from '@/lib/auth';
 
 const GenerateReviewQuestionsInputSchema = z.object({
   topicOrSkills: z
@@ -39,6 +40,7 @@ export type GenerateReviewQuestionsOutput = z.infer<typeof GenerateReviewQuestio
 export async function generateReviewQuestions(
   input: GenerateReviewQuestionsInput
 ): Promise<GenerateReviewQuestionsOutput> {
+  await requireUserSession();
   return generateReviewQuestionsFlow(input);
 }
 

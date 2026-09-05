@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { PlusCircle, Edit, Trash2, UserCheck, CalendarIcon, ChevronsUpDown, Loader2, Check } from 'lucide-react';
+import { PlusCircle, Edit, Trash2, UserCheck, CalendarIcon, ChevronsUpDown, Loader2, Check, RotateCcw } from 'lucide-react';
 import type { User, PeerReviewAssignment, Questionnaire, ReviewCycle } from '@/types';
 import { format, parseISO } from 'date-fns';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
@@ -27,7 +27,7 @@ import {
 import { cn } from '@/lib/utils';
 import { getActiveQuestionnairesAction } from '../questionnaires/actions';
 import { getActiveReviewCyclesAction } from '../review-cycles/actions';
-import { saveAssignmentAction, getAssignmentsByCycleAction, deleteAssignmentAction } from './actions';
+import { saveAssignmentAction, getAssignmentsByCycleAction, deleteAssignmentAction, clearSubmittedReviewAction, clearAllSubmittedReviewsAction } from './actions';
 import { useToast } from '@/hooks/use-toast';
 import { getUsersAction } from '../staff/actions';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -100,6 +100,7 @@ const AssignmentForm = ({ assignment, cycle, users, questionnaires, onSave, onCa
   const [reviewee, setReviewee] = useState<User | undefined>(getInitialUser(assignment?.revieweeId));
   const [reviewer, setReviewer] = useState<User | undefined>(getInitialUser(assignment?.reviewerId));
   const [questionnaireId, setQuestionnaireId] = useState<string | undefined>(assignment?.questionnaireId);
+  const [status, setStatus] = useState<PeerReviewAssignment['status']>(assignment?.status || 'pending');
   const [dueDate, setDueDate] = useState<Date | undefined>(assignment ? parseISO(assignment.dueDate) : new Date(cycle.endDate));
   const { toast } = useToast();
   
@@ -123,7 +124,7 @@ const AssignmentForm = ({ assignment, cycle, users, questionnaires, onSave, onCa
       reviewee,
       reviewer,
       questionnaireId,
-      status: assignment?.status || 'pending',
+      status,
       dueDate: dueDate.toISOString(),
     });
   };
@@ -168,6 +169,25 @@ const AssignmentForm = ({ assignment, cycle, users, questionnaires, onSave, onCa
                     <PopoverContent className="w-auto p-0"><Calendar mode="single" selected={dueDate} onSelect={setDueDate} initialFocus /></PopoverContent>
                 </Popover>
             </div>
+            {assignment && (
+                <div>
+                    <Label htmlFor="status">Status</Label>
+                    <Select value={status} onValueChange={(val) => setStatus(val as PeerReviewAssignment['status'])}>
+                        <SelectTrigger id="status"><SelectValue placeholder="Select status..." /></SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="pending">Pending</SelectItem>
+                            <SelectItem value="in_progress">In Progress</SelectItem>
+                            <SelectItem value="completed">Completed</SelectItem>
+                            <SelectItem value="declined">Declined</SelectItem>
+                        </SelectContent>
+                    </Select>
+                    {assignment.status === 'completed' && status === 'pending' && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                            Setting status to Pending will clear the submitted review so it can be redone.
+                        </p>
+                    )}
+                </div>
+            )}
         </CardContent>
         <CardFooter className="flex justify-end space-x-2">
             <Button variant="outline" onClick={onCancel} disabled={isSaving}>Cancel</Button>
@@ -195,6 +215,10 @@ export default function AdminAssignmentsPage() {
   const { toast } = useToast();
 
   const selectedCycle = useMemo(() => reviewCycles.find(c => c.id === selectedCycleId), [reviewCycles, selectedCycleId]);
+  
+  const completedAssignmentsCount = useMemo(() => {
+    return assignments.filter(a => a.status === 'completed').length;
+  }, [assignments]);
   
   useEffect(() => {
     const fetchInitialData = async () => {
@@ -282,6 +306,48 @@ export default function AdminAssignmentsPage() {
     }
   };
 
+  const handleClearSubmittedReview = async (id: string) => {
+    try {
+      await clearSubmittedReviewAction(id);
+      toast({
+        title: "Review Cleared",
+        description: "Submitted review has been cleared. The reviewer can now redo their review.",
+      });
+      const assignmentsData = await getAssignmentsByCycleAction(selectedCycleId);
+      setAssignments(assignmentsData);
+    } catch(error) {
+      console.error("Failed to clear submitted review", error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Could not clear submitted review.",
+      });
+    }
+  };
+
+  const handleClearAllSubmittedReviews = async () => {
+    if (!selectedCycleId) return;
+    try {
+      setIsLoading(true);
+      const result = await clearAllSubmittedReviewsAction(selectedCycleId);
+      toast({
+        title: "Reviews Cleared",
+        description: `${result.count} submitted review(s) cleared. Reviewers can now redo them.`,
+      });
+      const assignmentsData = await getAssignmentsByCycleAction(selectedCycleId);
+      setAssignments(assignmentsData);
+    } catch(error) {
+      console.error("Failed to clear all submitted reviews", error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Could not clear submitted reviews for this cycle.",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const closeForm = () => {
       setIsFormOpen(false);
       setEditingAssignment(undefined);
@@ -325,7 +391,39 @@ export default function AdminAssignmentsPage() {
                   <CardTitle>Current Assignments</CardTitle>
                   <CardDescription>Oversee and manage all peer review pairings for the selected review cycle.</CardDescription>
                 </div>
-                 <Select value={selectedCycleId} onValueChange={setSelectedCycleId} disabled={isLoading}>
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                  {completedAssignmentsCount > 0 && selectedCycle && (
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-800 hover:bg-amber-50 dark:hover:bg-amber-950"
+                        >
+                          <RotateCcw className="mr-2 h-4 w-4" />
+                          Clear Submitted ({completedAssignmentsCount})
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Clear All Submitted Reviews?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            This will clear all {completedAssignmentsCount} submitted review(s) for the cycle &apos;{selectedCycle.name}&apos; and reset them to pending so reviewers can redo them. This action cannot be undone.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={handleClearAllSubmittedReviews}
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                          >
+                            Clear All ({completedAssignmentsCount}) Reviews
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  )}
+                  <Select value={selectedCycleId} onValueChange={setSelectedCycleId} disabled={isLoading}>
                     <SelectTrigger className="w-full sm:w-[250px]">
                       <SelectValue placeholder="Select a review cycle..." />
                     </SelectTrigger>
@@ -333,6 +431,7 @@ export default function AdminAssignmentsPage() {
                       {reviewCycles.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
+                </div>
               </div>
             </CardHeader>
             <CardContent>
@@ -366,6 +465,36 @@ export default function AdminAssignmentsPage() {
                             </Badge>
                         </TableCell>
                         <TableCell className="text-right space-x-1">
+                          {a.status === 'completed' && (
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  title="Clear submitted review so it can be redone"
+                                  className="text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950"
+                                >
+                                  <RotateCcw className="h-4 w-4" />
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Clear Submitted Review?</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    Are you sure you want to clear the submitted review by <span className="font-semibold">{a.reviewerName}</span> for <span className="font-semibold">{a.revieweeName}</span>?
+                                    <br /><br />
+                                    This will reset the assignment status to pending and remove any submitted responses so the reviewer can redo their review.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                  <AlertDialogAction onClick={() => handleClearSubmittedReview(a.id)}>
+                                    Clear Review
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          )}
                           <Button variant="ghost" size="icon" onClick={() => handleEdit(a)} title="Edit"><Edit className="h-4 w-4" /></Button>
                           <AlertDialog>
                             <AlertDialogTrigger asChild><Button variant="ghost" size="icon" title="Delete"><Trash2 className="h-4 w-4 text-destructive" /></Button></AlertDialogTrigger>

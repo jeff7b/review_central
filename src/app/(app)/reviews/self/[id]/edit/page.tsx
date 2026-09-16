@@ -1,41 +1,13 @@
-
 "use client";
 
+import { useEffect, useState } from 'react';
 import { ReviewForm } from '@/components/reviews/review-form';
-import type { Question, Answer, Review } from '@/types';
+import type { Answer, Review } from '@/types';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
-
-// Mock data for questions - in a real app, this would come from the specific questionnaire
-const mockSelfReviewQuestions: Question[] = [
-  { id: 'q1', text: 'What were your major accomplishments in the last review period?', order: 1 },
-  { id: 'q2', text: 'What are some areas where you faced challenges, and how did you address them?', order: 2 },
-  { id: 'q3', text: 'What are your key strengths, and how did you leverage them?', order: 3 },
-  { id: 'q4', text: 'What are your areas for development, and what steps will you take to improve?', order: 4 },
-  { id: 'q5', text: 'What are your goals for the next review period?', order: 5 },
-];
-
-// Mock existing review data - in a real app, fetch this based on params.id
-const mockExistingReview: Review = {
-  id: 'sr2', // Example ID, this would match the one from the dashboard
-  title: 'Mid-Year Self-Review 2024',
-  type: 'self',
-  status: 'draft',
-  dueDate: '2024-07-30',
-  questionnaireId: 'q2',
-  questions: mockSelfReviewQuestions,
-  answers: [
-    { questionId: 'q1', answerText: 'Launched the new product feature ahead of schedule.' },
-    { questionId: 'q2', answerText: 'Faced initial technical hurdles with API integration, resolved by collaborating with the backend team.' },
-    { questionId: 'q3', answerText: '' }, // Example of an unanswered or partially answered question
-    { questionId: 'q4', answerText: '' },
-    { questionId: 'q5', answerText: 'Lead the next phase of the project and mentor a junior developer.' },
-  ],
-  createdAt: '2024-07-01T10:00:00Z',
-  updatedAt: '2024-07-05T14:30:00Z',
-};
-
+import { Loader2 } from 'lucide-react';
+import { getSelfReviewAction, submitSelfReviewAction } from '@/app/(app)/reviews/actions';
+import { useToast } from '@/hooks/use-toast';
 
 export default function EditSelfReviewPage() {
   const router = useRouter();
@@ -44,60 +16,96 @@ export default function EditSelfReviewPage() {
 
   const [reviewData, setReviewData] = useState<Review | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const { toast } = useToast();
 
   useEffect(() => {
-    // Simulate fetching review data
-    // In a real app, you would fetch reviewData based on reviewId
-    if (reviewId) {
-      // For now, we'll just use the mockExistingReview if the ID matches
-      // Or you could have a list of mock reviews and find the one with reviewId
-      if (reviewId === mockExistingReview.id) {
-        setReviewData(mockExistingReview);
-      } else {
-        // Handle case where review is not found, e.g. redirect or show error
-        // For now, let's use a generic set of questions if no specific review is "found"
-        // This part would be more robust in a real fetch
-        setReviewData({
-            id: reviewId,
-            title: `Self-Review ID: ${reviewId}`,
-            type: 'self',
-            status: 'draft',
-            questions: mockSelfReviewQuestions,
-            answers: [],
-            questionnaireId: 'q_generic',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
+    async function loadReview() {
+      if (!reviewId) return;
+      try {
+        setIsLoading(true);
+        const res = await getSelfReviewAction(reviewId);
+        setReviewData(res.review);
+      } catch (error) {
+        console.error('Failed to load self-review:', error);
+        toast({
+          variant: 'destructive',
+          title: 'Review not found',
+          description: 'Could not load the requested self-review.',
         });
+        router.push('/dashboard');
+      } finally {
+        setIsLoading(false);
       }
-      setIsLoading(false);
     }
-  }, [reviewId]);
+    loadReview();
+  }, [reviewId, router, toast]);
 
-  const handleSubmitEditReview = (answers: Answer[]) => {
-    console.log(`Edited self-review (ID: ${reviewId}) submitted:`, answers);
-    // Here you would typically send the updated data to your backend
-    router.push('/dashboard');
-    // Add toast notification for success
+  const handleSubmitEditReview = async (answers: Answer[]) => {
+    if (!reviewData) return;
+    try {
+      await submitSelfReviewAction({
+        id: reviewData.id,
+        title: reviewData.title,
+        questionnaireId: reviewData.questionnaireId,
+        questions: reviewData.questions,
+        answers,
+        isDraft: false,
+        dueDate: reviewData.dueDate,
+      });
+      toast({
+        title: 'Self-review submitted',
+        description: 'Your changes and responses have been successfully submitted.',
+      });
+      router.push('/dashboard');
+    } catch (error: any) {
+      console.error('Failed to submit self-review:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Submission failed',
+        description: error.message || 'Could not submit your self-review.',
+      });
+    }
   };
 
-  const handleSaveDraftEditReview = (answers: Answer[]) => {
-    console.log(`Edited self-review draft (ID: ${reviewId}) saved:`, answers);
-    // Implement draft saving logic for updates
-    // Add toast notification for draft saved
+  const handleSaveDraftEditReview = async (answers: Answer[]) => {
+    if (!reviewData) return;
+    try {
+      await submitSelfReviewAction({
+        id: reviewData.id,
+        title: reviewData.title,
+        questionnaireId: reviewData.questionnaireId,
+        questions: reviewData.questions,
+        answers,
+        isDraft: true,
+        dueDate: reviewData.dueDate,
+      });
+      toast({
+        title: 'Draft saved',
+        description: 'Your self-review draft has been saved.',
+      });
+    } catch (error: any) {
+      console.error('Failed to save draft:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Failed to save draft',
+        description: error.message || 'Could not save draft.',
+      });
+    }
   };
 
   if (isLoading) {
     return (
-      <div className="flex justify-center items-center min-h-[calc(100vh-8rem)]">
-        <p>Loading review data...</p>
+      <div className="flex flex-col items-center justify-center py-20 space-y-3">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <p className="text-xs text-muted-foreground">Loading self-review data...</p>
       </div>
     );
   }
 
   if (!reviewData) {
-     return (
-      <div className="flex justify-center items-center min-h-[calc(100vh-8rem)]">
-        <p>Review not found.</p>
+    return (
+      <div className="flex flex-col items-center justify-center py-20">
+        <p className="text-sm font-semibold">Review not found.</p>
       </div>
     );
   }
@@ -115,7 +123,7 @@ export default function EditSelfReviewPage() {
         initialAnswers={reviewData.answers}
         onSubmit={handleSubmitEditReview}
         onSaveDraft={handleSaveDraftEditReview}
-        formTitle={`Edit Self-Review: ${reviewData.title}`}
+        formTitle={`Edit: ${reviewData.title}`}
         formDescription="Update your responses below. Your feedback is valuable for your growth and development."
       />
     </div>

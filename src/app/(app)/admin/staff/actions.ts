@@ -13,6 +13,7 @@ const SaveUserSchema = z.object({
   email: z.string().trim().email('Invalid email address'),
   role: z.enum(['employee', 'team_leader', 'admin']),
   avatarUrl: z.string().url().optional().or(z.literal('')),
+  mentorId: z.string().nullable().optional(),
 });
 
 const UserIdSchema = z.string().min(1, 'User ID is required');
@@ -51,10 +52,19 @@ export async function saveUserAction(user: Omit<User, 'id'> & { id?: string }) {
   const usersRef = adminDb.collection('users');
   
   try {
+    const mentorId = validatedUser.mentorId ? validatedUser.mentorId : null;
+
     if (validatedUser.id) {
+      if (mentorId && mentorId === validatedUser.id) {
+        throw new Error('A user cannot be assigned as their own Admin/Mentor.');
+      }
       // Update existing user
       const userDocRef = usersRef.doc(validatedUser.id);
-      await userDocRef.update({ ...validatedUser, email: validatedUser.email.toLowerCase() });
+      await userDocRef.update({
+        ...validatedUser,
+        mentorId,
+        email: validatedUser.email.toLowerCase(),
+      });
     } else {
       // Create new user
       const finalUserEmail = validatedUser.email.toLowerCase();
@@ -71,6 +81,7 @@ export async function saveUserAction(user: Omit<User, 'id'> & { id?: string }) {
       await newDocRef.set({
         ...validatedUser,
         id: newDocRef.id,
+        mentorId,
         email: finalUserEmail,
         // Provide a default placeholder avatar if none is given
         avatarUrl: validatedUser.avatarUrl || `https://placehold.co/100x100.png?text=${initials}`
@@ -80,7 +91,7 @@ export async function saveUserAction(user: Omit<User, 'id'> & { id?: string }) {
   } catch (error: any) {
     console.error("Error saving user:", error);
     // Re-throw specific, user-friendly errors
-    if (error.message.includes('already exists')) {
+    if (error.message.includes('already exists') || error.message.includes('own Admin/Mentor')) {
         throw error;
     }
     throw new Error("Failed to save user due to a server error.");
@@ -95,7 +106,19 @@ export async function deleteUserAction(userId: string) {
   await requireAdminSession();
   const validatedUserId = UserIdSchema.parse(userId);
   try {
-    await adminDb.collection('users').doc(validatedUserId).delete();
+    const usersRef = adminDb.collection('users');
+    await usersRef.doc(validatedUserId).delete();
+
+    // Clean up any mentorId references pointing to the deleted user
+    const menteesSnapshot = await usersRef.where('mentorId', '==', validatedUserId).get();
+    if (!menteesSnapshot.empty) {
+      const batch = adminDb.batch();
+      menteesSnapshot.docs.forEach((doc) => {
+        batch.update(doc.ref, { mentorId: null });
+      });
+      await batch.commit();
+    }
+
     revalidatePath('/admin/staff');
   } catch (error) {
     console.error("Error deleting user:", error);

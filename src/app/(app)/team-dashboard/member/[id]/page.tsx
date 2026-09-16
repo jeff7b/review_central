@@ -102,15 +102,15 @@ export default function TeamMemberDetailPage() {
               <Avatar className="h-16 w-16 ring-2 ring-border">
                 <AvatarImage src={member.avatarUrl} alt={member.name} />
                 <AvatarFallback className="text-lg font-bold">
-                  {member.name.split(' ').map(n => n[0]).join('')}
+                  {(member.name || 'User').split(' ').filter(Boolean).map(n => n[0]).join('')}
                 </AvatarFallback>
               </Avatar>
               <div className="space-y-1">
-                <h1 className="text-xl font-bold font-headline text-foreground">{member.name}</h1>
-                <p className="text-xs text-muted-foreground">{member.email}</p>
+                <h1 className="text-xl font-bold font-headline text-foreground">{member.name || 'User'}</h1>
+                <p className="text-xs text-muted-foreground">{member.email || 'No email'}</p>
                 <div className="flex items-center gap-2 pt-1">
                   <Badge variant="outline" className="text-xs capitalize font-medium">
-                    {member.role.replace('_', ' ')}
+                    {(member.role || 'employee').replace('_', ' ')}
                   </Badge>
                   {selfReview?.status === 'submitted' ? (
                     <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 text-xs">

@@ -152,7 +152,8 @@ export default function TeamDashboardPage() {
   const totalCompletedPeer = data?.totalCompletedPeer || 0;
 
   const filteredMembers = members.filter(member => {
-    const nameMatch = member.name.toLowerCase().includes(searchTerm.toLowerCase());
+    const searchLower = (searchTerm || '').toLowerCase();
+    const nameMatch = (member?.name || '').toLowerCase().includes(searchLower);
     const statusMatch = filterStatus === 'all' || 
                         (filterStatus === 'at_risk' && (member.selfReviewStatus === 'not_started' || (member.peerReviewsAssignedCount > 0 && (member.peerReviewsCompletedCount / member.peerReviewsAssignedCount) < 0.5))) ||
                         (filterStatus === 'submitted' && member.selfReviewStatus === 'submitted') ||

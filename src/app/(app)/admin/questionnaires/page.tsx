@@ -241,13 +241,16 @@ export default function AdminQuestionnairesPage() {
   };
 
   return (
-    <div className="space-y-8">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <h1 className="text-3xl font-bold tracking-tight font-headline">Manage Questionnaires</h1>
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-2 border-b border-border">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground font-headline">Manage Questionnaires</h1>
+          <p className="text-xs text-muted-foreground">Standardize evaluation criteria and questions for self-assessments and peer surveys</p>
+        </div>
         <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
           <DialogTrigger asChild>
-            <Button onClick={handleAddNew}>
-              <PlusCircle className="mr-2 h-5 w-5" /> Create New Questionnaire
+            <Button onClick={handleAddNew} size="sm" className="h-9 font-medium shadow-sm">
+              <PlusCircle className="mr-1.5 h-4 w-4" /> Create New Questionnaire
             </Button>
           </DialogTrigger>
           {isFormOpen && (
@@ -261,65 +264,78 @@ export default function AdminQuestionnairesPage() {
         </Dialog>
       </div>
 
-      <Card className="shadow-lg">
-        <CardHeader>
-          <CardTitle>Questionnaire Templates</CardTitle>
-          <CardDescription>Define and manage the sets of questions used for self and peer reviews. Editing creates a new version.</CardDescription>
+      <Card className="border border-border bg-card shadow-sm">
+        <CardHeader className="pb-3 border-b border-border/50">
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-base font-semibold font-headline">Questionnaire Templates</CardTitle>
+              <CardDescription className="text-xs">Versioned survey question templates used across review cycles</CardDescription>
+            </div>
+            <Badge variant="secondary" className="text-xs font-medium">
+              {questionnaires.length} Templates
+            </Badge>
+          </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-0">
           {isLoading ? (
-            <div className="flex justify-center items-center py-10">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <div className="flex justify-center items-center py-12">
+              <Loader2 className="h-6 w-6 animate-spin text-primary" />
             </div>
           ) : questionnaires.length > 0 ? (
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead className="text-center">Questions</TableHead>
-                  <TableHead className="text-center">Version</TableHead>
-                  <TableHead className="text-center">Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                <TableRow className="bg-muted/40 hover:bg-muted/40">
+                  <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground pl-6">Template Name</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Survey Type</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground text-center">Questions</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground text-center">Version</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground text-center">Status</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground text-right pr-6">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {questionnaires.map((q) => (
-                  <TableRow key={q.id}>
-                    <TableCell className="font-medium">{q.name}</TableCell>
+                  <TableRow key={q.id} className="hover:bg-muted/20 transition-colors">
+                    <TableCell className="font-medium text-sm text-foreground pl-6">{q.name}</TableCell>
                     <TableCell>
-                      <Badge variant={q.type === 'self' ? 'default' : 'secondary'} className="capitalize">
+                      <Badge variant="outline" className={`capitalize text-xs font-medium ${q.type === 'self' ? 'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300' : 'border-indigo-200 bg-indigo-50 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300'}`}>
                         {q.type === 'self' ? <FileText className="mr-1 h-3 w-3" /> : <Users className="mr-1 h-3 w-3" />}
-                        {q.type}
+                        {q.type}-Review
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-center">{q.questions.length}</TableCell>
-                    <TableCell className="text-center">v{q.version}</TableCell>
+                    <TableCell className="text-center text-xs text-muted-foreground">
+                      {q.questions.length} questions
+                    </TableCell>
                     <TableCell className="text-center">
-                      <Badge variant={q.isActive ? 'default' : 'outline'} className={q.isActive ? 'bg-green-500 hover:bg-green-600 text-white' : ''}>
+                      <span className="inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-xs font-mono text-muted-foreground">
+                        v{q.version}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <Badge variant="outline" className={`text-xs font-medium ${q.isActive ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300' : 'border-slate-200 bg-slate-100 text-slate-600 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-400'}`}>
                         {q.isActive ? 'Active' : 'Archived'}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-right space-x-1">
-                      <Button variant="ghost" size="icon" onClick={() => handleEdit(q)} title="Edit (creates new version)">
-                        <Edit className="h-4 w-4" />
+                    <TableCell className="text-right space-x-1 pr-6">
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" onClick={() => handleEdit(q)} title="Edit (creates new version)">
+                        <Edit className="h-3.5 w-3.5" />
                       </Button>
                       <AlertDialog>
                           <AlertDialogTrigger asChild>
-                              <Button variant="ghost" size="icon" title="Deactivate Template">
-                                <Trash2 className="h-4 w-4 text-destructive" />
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" title="Deactivate Template">
+                                <Trash2 className="h-3.5 w-3.5" />
                               </Button>
                           </AlertDialogTrigger>
                           <AlertDialogContent>
                               <AlertDialogHeader>
-                                  <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-                                  <AlertDialogDescription>
-                                      This will deactivate all versions of this questionnaire template. You won't be able to use it for new assignments. This action cannot be undone.
+                                  <AlertDialogTitle>Deactivate questionnaire template?</AlertDialogTitle>
+                                  <AlertDialogDescription className="text-xs text-muted-foreground">
+                                      This will deactivate all versions of this questionnaire template and prevent new assignments from using it.
                                   </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>
-                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                  <AlertDialogAction onClick={() => handleDelete(q.templateId)}>Deactivate</AlertDialogAction>
+                                  <AlertDialogCancel className="text-xs">Cancel</AlertDialogCancel>
+                                  <AlertDialogAction className="text-xs bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => handleDelete(q.templateId)}>Deactivate</AlertDialogAction>
                               </AlertDialogFooter>
                           </AlertDialogContent>
                       </AlertDialog>
@@ -329,11 +345,12 @@ export default function AdminQuestionnairesPage() {
               </TableBody>
             </Table>
           ) : (
-            <div className="text-center py-10">
-              <FileText className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-              <p className="text-muted-foreground">No questionnaires created yet.</p>
-              <Button className="mt-4" onClick={handleAddNew}>
-                Create Your First Questionnaire
+            <div className="text-center py-12">
+              <FileText className="mx-auto h-10 w-10 text-muted-foreground mb-3" />
+              <h3 className="text-sm font-semibold text-foreground">No questionnaires created</h3>
+              <p className="text-xs text-muted-foreground mt-1 mb-4">Define question templates to distribute for performance cycles.</p>
+              <Button size="sm" onClick={handleAddNew}>
+                Create First Questionnaire
               </Button>
             </div>
           )}

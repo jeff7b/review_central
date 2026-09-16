@@ -28,6 +28,7 @@ export interface Review {
   reviewer?: User; // Person writing the review (relevant for peer reviews)
   questionnaireId: string;
   questions: Question[];
+  answers?: Answer[];
   createdAt: string;
   updatedAt: string;
 }

@@ -170,23 +170,41 @@ export default function AdminStaffPage() {
     setEditingUser(undefined);
   };
 
-  const getRoleBadgeVariant = (role: User['role']) => {
+  const renderRoleBadge = (role: User['role']) => {
     switch(role) {
-      case 'admin': return 'destructive';
-      case 'team_leader': return 'default';
-      case 'employee': return 'secondary';
-      default: return 'outline';
+      case 'admin':
+        return (
+          <Badge variant="outline" className="border-purple-200 bg-purple-50 text-purple-700 dark:border-purple-800 dark:bg-purple-950/40 dark:text-purple-300 text-xs font-medium capitalize">
+            Admin
+          </Badge>
+        );
+      case 'team_leader':
+        return (
+          <Badge variant="outline" className="border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300 text-xs font-medium capitalize">
+            Team Leader
+          </Badge>
+        );
+      case 'employee':
+      default:
+        return (
+          <Badge variant="outline" className="border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 text-xs font-medium capitalize">
+            Employee
+          </Badge>
+        );
     }
-  }
+  };
 
   return (
-    <div className="space-y-8">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <h1 className="text-3xl font-bold tracking-tight font-headline">Manage Staff</h1>
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-2 border-b border-border">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground font-headline">Manage Staff</h1>
+          <p className="text-xs text-muted-foreground">Add, edit, and manage user roles and permissions across your organization</p>
+        </div>
         <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
           <DialogTrigger asChild>
-            <Button onClick={handleAddNew}>
-              <PlusCircle className="mr-2 h-5 w-5" /> Add New Staff
+            <Button onClick={handleAddNew} size="sm" className="h-9 font-medium shadow-sm">
+              <PlusCircle className="mr-1.5 h-4 w-4" /> Add New Staff
             </Button>
           </DialogTrigger>
           {isFormOpen && (
@@ -200,62 +218,69 @@ export default function AdminStaffPage() {
         </Dialog>
       </div>
 
-      <Card className="shadow-lg">
-        <CardHeader>
-          <CardTitle>Staff List</CardTitle>
-          <CardDescription>Add, edit, and remove staff members from the system.</CardDescription>
+      <Card className="border border-border bg-card shadow-sm">
+        <CardHeader className="pb-3 border-b border-border/50">
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-base font-semibold font-headline">Directory Members</CardTitle>
+              <CardDescription className="text-xs">Active accounts authorized to perform and receive reviews</CardDescription>
+            </div>
+            <Badge variant="secondary" className="text-xs font-medium">
+              {users.length} Users
+            </Badge>
+          </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-0">
           {isLoading ? (
-            <div className="flex justify-center items-center py-10">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <div className="flex justify-center items-center py-12">
+              <Loader2 className="h-6 w-6 animate-spin text-primary" />
             </div>
           ) : users.length > 0 ? (
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead className="text-center">Role</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                <TableRow className="bg-muted/40 hover:bg-muted/40">
+                  <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground pl-6">Name</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Email</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground text-center">Role</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground text-right pr-6">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {users.map((user) => (
-                  <TableRow key={user.id}>
-                    <TableCell className="font-medium flex items-center">
-                        <Avatar className="h-8 w-8 mr-3">
-                            <AvatarImage src={user.avatarUrl} alt={user.name} />
-                            <AvatarFallback>{user.name.split(' ').map(n=>n[0]).join('')}</AvatarFallback>
-                        </Avatar>
-                        {user.name}
+                  <TableRow key={user.id} className="hover:bg-muted/20 transition-colors">
+                    <TableCell className="font-medium flex items-center pl-6">
+                      <Avatar className="h-8 w-8 mr-3 ring-1 ring-border">
+                        <AvatarImage src={user.avatarUrl} alt={user.name} />
+                        <AvatarFallback className="text-xs font-semibold">{user.name.split(' ').map(n=>n[0]).join('')}</AvatarFallback>
+                      </Avatar>
+                      <span className="text-sm font-medium text-foreground">{user.name}</span>
                     </TableCell>
-                    <TableCell>{user.email}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground">{user.email}</TableCell>
                     <TableCell className="text-center">
-                      <Badge variant={getRoleBadgeVariant(user.role)} className="capitalize">{user.role.replace('_', ' ')}</Badge>
+                      {renderRoleBadge(user.role)}
                     </TableCell>
-                    <TableCell className="text-right space-x-1">
-                      <Button variant="ghost" size="icon" onClick={() => handleEdit(user)} title="Edit User">
-                        <Edit className="h-4 w-4" />
+                    <TableCell className="text-right space-x-1 pr-6">
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" onClick={() => handleEdit(user)} title="Edit User">
+                        <Edit className="h-3.5 w-3.5" />
                       </Button>
                       <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                              <Button variant="ghost" size="icon" title="Delete User">
-                                <Trash2 className="h-4 w-4 text-destructive" />
-                              </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                              <AlertDialogHeader>
-                                  <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-                                  <AlertDialogDescription>
-                                      This action cannot be undone. This will permanently delete the user and their associated data.
-                                  </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                  <AlertDialogAction onClick={() => handleDelete(user.id)}>Delete</AlertDialogAction>
-                              </AlertDialogFooter>
-                          </AlertDialogContent>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" title="Delete User">
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Delete staff member?</AlertDialogTitle>
+                            <AlertDialogDescription className="text-xs text-muted-foreground">
+                              This will permanently revoke access for {user.name} and remove their data. This action cannot be reversed.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel className="text-xs">Cancel</AlertDialogCancel>
+                            <AlertDialogAction className="text-xs bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => handleDelete(user.id)}>Delete</AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
                       </AlertDialog>
                     </TableCell>
                   </TableRow>
@@ -263,11 +288,12 @@ export default function AdminStaffPage() {
               </TableBody>
             </Table>
           ) : (
-            <div className="text-center py-10">
-              <UserCog className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-              <p className="text-muted-foreground">No staff members found.</p>
-              <Button className="mt-4" onClick={handleAddNew}>
-                Add Your First Staff Member
+            <div className="text-center py-12">
+              <UserCog className="mx-auto h-10 w-10 text-muted-foreground mb-3" />
+              <h3 className="text-sm font-semibold text-foreground">No staff members found</h3>
+              <p className="text-xs text-muted-foreground mt-1 mb-4">Get started by creating your first team member.</p>
+              <Button size="sm" onClick={handleAddNew}>
+                Add First Staff Member
               </Button>
             </div>
           )}

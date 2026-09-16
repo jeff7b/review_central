@@ -287,23 +287,45 @@ export default function AdminAssignmentsPage() {
       setEditingAssignment(undefined);
   }
 
-  const getStatusBadgeVariant = (status: PeerReviewAssignment['status']): "default" | "secondary" | "outline" | "destructive" => {
+  const renderAssignmentStatusBadge = (status: PeerReviewAssignment['status']) => {
     switch (status) {
-      case 'pending': return 'secondary';
-      case 'in_progress': return 'default';
-      case 'completed': return 'outline';
-      case 'declined': return 'destructive';
-      default: return 'default';
+      case 'completed':
+        return (
+          <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 text-xs font-medium capitalize">
+            Completed
+          </Badge>
+        );
+      case 'in_progress':
+        return (
+          <Badge variant="outline" className="border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300 text-xs font-medium capitalize">
+            In Progress
+          </Badge>
+        );
+      case 'pending':
+        return (
+          <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300 text-xs font-medium capitalize">
+            Pending
+          </Badge>
+        );
+      case 'declined':
+      default:
+        return (
+          <Badge variant="outline" className="border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-300 text-xs font-medium capitalize">
+            Declined
+          </Badge>
+        );
     }
   };
 
-
   return (
-    <div className="space-y-8">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <h1 className="text-3xl font-bold tracking-tight font-headline">Manage Peer Review Assignments</h1>
-         <Button onClick={handleAddNew} disabled={!selectedCycle}>
-            <PlusCircle className="mr-2 h-5 w-5" /> Create New Assignment
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-2 border-b border-border">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground font-headline">Peer Review Assignments</h1>
+          <p className="text-xs text-muted-foreground">Manage reviewer-to-reviewee pairings and survey questionnaires for active cycles</p>
+        </div>
+        <Button onClick={handleAddNew} disabled={!selectedCycle} size="sm" className="h-9 font-medium shadow-sm">
+          <PlusCircle className="mr-1.5 h-4 w-4" /> Create New Assignment
         </Button>
       </div>
 
@@ -318,60 +340,69 @@ export default function AdminAssignmentsPage() {
             isSaving={isSaving}
         />
       ) : (
-        <Card className="shadow-lg">
-            <CardHeader>
+        <Card className="border border-border bg-card shadow-sm">
+            <CardHeader className="pb-3 border-b border-border/50">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
-                  <CardTitle>Current Assignments</CardTitle>
-                  <CardDescription>Oversee and manage all peer review pairings for the selected review cycle.</CardDescription>
+                  <CardTitle className="text-base font-semibold font-headline">Cycle Pairings</CardTitle>
+                  <CardDescription className="text-xs">Oversee reviewer assignments and completion status</CardDescription>
                 </div>
                  <Select value={selectedCycleId} onValueChange={setSelectedCycleId} disabled={isLoading}>
-                    <SelectTrigger className="w-full sm:w-[250px]">
-                      <SelectValue placeholder="Select a review cycle..." />
+                    <SelectTrigger className="w-full sm:w-[240px] h-9 text-xs">
+                      <SelectValue placeholder="Select review cycle..." />
                     </SelectTrigger>
                     <SelectContent>
-                      {reviewCycles.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                      {reviewCycles.map(c => <SelectItem key={c.id} value={c.id} className="text-xs">{c.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
               </div>
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-0">
             {isLoading ? (
-                <div className="flex justify-center items-center py-10"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
+                <div className="flex justify-center items-center py-12"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
             ) : !selectedCycle ? (
-                <div className="text-center py-10"><UserCheck className="mx-auto h-12 w-12 text-muted-foreground mb-4" /><p className="text-muted-foreground">Please select a review cycle to view assignments.</p><p className="text-sm mt-2 text-muted-foreground">No active cycles? <Link href="/admin/review-cycles" className="underline text-primary">Create one here</Link>.</p></div>
+                <div className="text-center py-12">
+                  <UserCheck className="mx-auto h-10 w-10 text-muted-foreground mb-3" />
+                  <h3 className="text-sm font-semibold text-foreground">Select a review cycle</h3>
+                  <p className="text-xs text-muted-foreground mt-1">Please select an evaluation cycle above to view assignments.</p>
+                </div>
             ) : assignments.length > 0 ? (
                 <Table>
-                <TableHeader><TableRow>
-                    <TableHead>Reviewee</TableHead><TableHead>Reviewer</TableHead>
-                    <TableHead>Questionnaire</TableHead><TableHead>Due Date</TableHead>
-                    <TableHead className="text-center">Status</TableHead><TableHead className="text-right">Actions</TableHead>
-                </TableRow></TableHeader>
+                <TableHeader>
+                  <TableRow className="bg-muted/40 hover:bg-muted/40">
+                    <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground pl-6">Reviewee</TableHead>
+                    <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Reviewer</TableHead>
+                    <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Questionnaire</TableHead>
+                    <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Due Date</TableHead>
+                    <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground text-center">Status</TableHead>
+                    <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground text-right pr-6">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
                 <TableBody>
                     {assignments.map((a) => (
-                    <TableRow key={a.id}>
-                        <TableCell className="font-medium flex items-center">
-                            <Avatar className="h-6 w-6 mr-2"><AvatarImage src={a.revieweeAvatarUrl} alt={a.revieweeName} /><AvatarFallback>{a.revieweeName.split(' ').map(n=>n[0]).join('')}</AvatarFallback></Avatar>
-                            {a.revieweeName}
+                    <TableRow key={a.id} className="hover:bg-muted/20 transition-colors">
+                        <TableCell className="font-medium flex items-center pl-6">
+                            <Avatar className="h-7 w-7 mr-2.5 ring-1 ring-border"><AvatarImage src={a.revieweeAvatarUrl} alt={a.revieweeName} /><AvatarFallback className="text-[10px]">{a.revieweeName.split(' ').map(n=>n[0]).join('')}</AvatarFallback></Avatar>
+                            <span className="text-sm font-medium text-foreground">{a.revieweeName}</span>
                         </TableCell>
-                        <TableCell className="flex items-center">
-                            <Avatar className="h-6 w-6 mr-2"><AvatarImage src={a.reviewerAvatarUrl} alt={a.reviewerName} /><AvatarFallback>{a.reviewerName.split(' ').map(n=>n[0]).join('')}</AvatarFallback></Avatar>
-                            {a.reviewerName}
+                        <TableCell>
+                          <div className="flex items-center">
+                            <Avatar className="h-7 w-7 mr-2.5 ring-1 ring-border"><AvatarImage src={a.reviewerAvatarUrl} alt={a.reviewerName} /><AvatarFallback className="text-[10px]">{a.reviewerName.split(' ').map(n=>n[0]).join('')}</AvatarFallback></Avatar>
+                            <span className="text-sm text-foreground">{a.reviewerName}</span>
+                          </div>
                         </TableCell>
-                        <TableCell>{allQuestionnaires.find(q => q.id === a.questionnaireId)?.name || a.questionnaireId}</TableCell>
-                        <TableCell>{format(parseISO(a.dueDate), "MMM dd, yyyy")}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{allQuestionnaires.find(q => q.id === a.questionnaireId)?.name || a.questionnaireId}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{format(parseISO(a.dueDate), "MMM dd, yyyy")}</TableCell>
                         <TableCell className="text-center">
-                            <Badge variant={getStatusBadgeVariant(a.status)} className={cn("capitalize", a.status === 'completed' ? 'bg-green-100 text-green-700 border-green-300' : '')}>
-                                {a.status.replace('_', ' ')}
-                            </Badge>
+                            {renderAssignmentStatusBadge(a.status)}
                         </TableCell>
-                        <TableCell className="text-right space-x-1">
-                          <Button variant="ghost" size="icon" onClick={() => handleEdit(a)} title="Edit"><Edit className="h-4 w-4" /></Button>
+                        <TableCell className="text-right space-x-1 pr-6">
+                          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" onClick={() => handleEdit(a)} title="Edit Assignment"><Edit className="h-3.5 w-3.5" /></Button>
                           <AlertDialog>
-                            <AlertDialogTrigger asChild><Button variant="ghost" size="icon" title="Delete"><Trash2 className="h-4 w-4 text-destructive" /></Button></AlertDialogTrigger>
+                            <AlertDialogTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" title="Delete Assignment"><Trash2 className="h-3.5 w-3.5" /></Button></AlertDialogTrigger>
                             <AlertDialogContent>
-                                <AlertDialogHeader><AlertDialogTitle>Are you sure?</AlertDialogTitle><AlertDialogDescription>This will permanently delete this assignment. This action cannot be undone.</AlertDialogDescription></AlertDialogHeader>
-                                <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={() => handleDelete(a.id)}>Delete</AlertDialogAction></AlertDialogFooter>
+                                <AlertDialogHeader><AlertDialogTitle>Delete assignment?</AlertDialogTitle><AlertDialogDescription className="text-xs text-muted-foreground">This will permanently delete this review pairing. This action cannot be reversed.</AlertDialogDescription></AlertDialogHeader>
+                                <AlertDialogFooter><AlertDialogCancel className="text-xs">Cancel</AlertDialogCancel><AlertDialogAction className="text-xs bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => handleDelete(a.id)}>Delete</AlertDialogAction></AlertDialogFooter>
                             </AlertDialogContent>
                           </AlertDialog>
                         </TableCell>
@@ -380,10 +411,11 @@ export default function AdminAssignmentsPage() {
                 </TableBody>
                 </Table>
             ) : (
-                <div className="text-center py-10">
-                <UserCheck className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-                <p className="text-muted-foreground">No assignments created for '{selectedCycle.name}' yet.</p>
-                 <Button className="mt-4" onClick={handleAddNew}>Create First Assignment</Button>
+                <div className="text-center py-12">
+                  <UserCheck className="mx-auto h-10 w-10 text-muted-foreground mb-3" />
+                  <h3 className="text-sm font-semibold text-foreground">No assignments for this cycle</h3>
+                  <p className="text-xs text-muted-foreground mt-1 mb-4">Create reviewer pairings for '{selectedCycle.name}' to start the peer evaluation process.</p>
+                  <Button size="sm" onClick={handleAddNew}>Create First Assignment</Button>
                 </div>
             )}
             </CardContent>

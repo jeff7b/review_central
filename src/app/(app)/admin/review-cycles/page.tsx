@@ -260,23 +260,42 @@ export default function AdminReviewCyclesPage() {
     setEditingCycle(undefined);
   };
   
-  const getStatusBadgeVariant = (status: ReviewCycle['status']) => {
+  const renderStatusBadge = (status: ReviewCycle['status']) => {
     switch (status) {
-      case 'active': return 'default';
-      case 'draft': return 'secondary';
-      case 'closed': return 'outline';
-      default: return 'outline';
+      case 'active':
+        return (
+          <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 text-xs font-medium capitalize">
+            Active
+          </Badge>
+        );
+      case 'draft':
+        return (
+          <Badge variant="outline" className="border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 text-xs font-medium capitalize">
+            Draft
+          </Badge>
+        );
+      case 'closed':
+      default:
+        return (
+          <Badge variant="outline" className="border-muted-foreground/30 bg-muted/60 text-muted-foreground text-xs font-medium capitalize">
+            Closed
+          </Badge>
+        );
     }
   };
 
-
   return (
-    <div className="space-y-8">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <h1 className="text-3xl font-bold tracking-tight font-headline">Manage Review Cycles</h1>
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-2 border-b border-border">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground font-headline">Manage Review Cycles</h1>
+          <p className="text-xs text-muted-foreground">Define evaluation timelines, participants, and company-wide cycle schedules</p>
+        </div>
         <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
           <DialogTrigger asChild>
-            <Button onClick={handleAddNew}><PlusCircle className="mr-2 h-5 w-5" /> Create New Cycle</Button>
+            <Button onClick={handleAddNew} size="sm" className="h-9 font-medium shadow-sm">
+              <PlusCircle className="mr-1.5 h-4 w-4" /> Create New Cycle
+            </Button>
           </DialogTrigger>
           {isFormOpen && (
             <ReviewCycleForm
@@ -290,50 +309,62 @@ export default function AdminReviewCyclesPage() {
         </Dialog>
       </div>
 
-       <Card className="shadow-lg">
-        <CardHeader>
-          <CardTitle>All Review Cycles</CardTitle>
-          <CardDescription>Oversee all past, present, and future review periods.</CardDescription>
+      <Card className="border border-border bg-card shadow-sm">
+        <CardHeader className="pb-3 border-b border-border/50">
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-base font-semibold font-headline">Evaluation Cycles</CardTitle>
+              <CardDescription className="text-xs">Oversee all past, present, and scheduled review periods</CardDescription>
+            </div>
+            <Badge variant="secondary" className="text-xs font-medium">
+              {cycles.length} Cycles
+            </Badge>
+          </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-0">
           {isLoading ? (
-             <div className="flex justify-center items-center py-10"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
+             <div className="flex justify-center items-center py-12"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
           ) : cycles.length > 0 ? (
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Date Range</TableHead>
-                  <TableHead className="text-center">Participants</TableHead>
-                  <TableHead className="text-center">Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                <TableRow className="bg-muted/40 hover:bg-muted/40">
+                  <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground pl-6">Cycle Name</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Date Range</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground text-center">Participants</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground text-center">Status</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground text-right pr-6">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {cycles.map((c) => (
-                  <TableRow key={c.id}>
-                    <TableCell className="font-medium">{c.name}</TableCell>
-                    <TableCell>{format(parseISO(c.startDate), "MMM dd, yyyy")} - {format(parseISO(c.endDate), "MMM dd, yyyy")}</TableCell>
-                    <TableCell className="text-center">{c.participantIds.length}</TableCell>
-                    <TableCell className="text-center">
-                        <Badge variant={getStatusBadgeVariant(c.status)} className={cn("capitalize", c.status === 'active' ? 'bg-green-100 text-green-700 border-green-300' : '')}>
-                           {c.status}
-                        </Badge>
+                  <TableRow key={c.id} className="hover:bg-muted/20 transition-colors">
+                    <TableCell className="font-medium text-sm text-foreground pl-6">{c.name}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {format(parseISO(c.startDate), "MMM dd, yyyy")} - {format(parseISO(c.endDate), "MMM dd, yyyy")}
                     </TableCell>
-                    <TableCell className="text-right">
-                       <Button variant="ghost" size="icon" onClick={() => handleEdit(c)} title="Edit">
-                            <Edit className="h-4 w-4" />
-                        </Button>
+                    <TableCell className="text-center text-xs font-medium">
+                      <span className="inline-flex items-center rounded-md bg-muted px-2 py-0.5 text-xs text-foreground">
+                        {c.participantIds.length} members
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      {renderStatusBadge(c.status)}
+                    </TableCell>
+                    <TableCell className="text-right pr-6">
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" onClick={() => handleEdit(c)} title="Edit Cycle">
+                        <Edit className="h-3.5 w-3.5" />
+                      </Button>
                     </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
           ) : (
-             <div className="text-center py-10">
-                <CalendarIcon className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-                <p className="text-muted-foreground">No review cycles created yet.</p>
-                 <Button className="mt-4" onClick={handleAddNew}>Create First Cycle</Button>
+             <div className="text-center py-12">
+                <CalendarIcon className="mx-auto h-10 w-10 text-muted-foreground mb-3" />
+                <h3 className="text-sm font-semibold text-foreground">No review cycles created</h3>
+                <p className="text-xs text-muted-foreground mt-1 mb-4">Set up your organization's first review cycle to begin collecting feedback.</p>
+                <Button size="sm" onClick={handleAddNew}>Create First Cycle</Button>
             </div>
           )}
         </CardContent>

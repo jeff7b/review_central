@@ -14,44 +14,63 @@ export function SiteHeader() {
   const isLoggedIn = status === 'authenticated';
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="container flex h-16 max-w-screen-2xl items-center">
-        <Link href="/" className="mr-6 flex items-center space-x-2">
-          <Building2 className="h-6 w-6 text-primary" />
-          <span className="font-bold sm:inline-block text-lg font-headline">
-            Review Central
-          </span>
-        </Link>
+    <header className="sticky top-0 z-50 w-full border-b border-border bg-background/95 backdrop-blur-md">
+      <div className="container flex h-14 max-w-screen-2xl items-center justify-between px-4 sm:px-6">
+        <div className="flex items-center gap-3">
+          <Link href="/dashboard" className="flex items-center gap-2.5 transition-opacity hover:opacity-90">
+            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground shadow-sm">
+              <Building2 className="h-4 w-4" />
+            </div>
+            <div className="flex flex-col">
+              <div className="flex items-center gap-1.5">
+                <span className="font-semibold text-sm tracking-tight text-foreground font-headline">
+                  Review Central
+                </span>
+                <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+                  Enterprise
+                </span>
+              </div>
+            </div>
+          </Link>
+        </div>
         
-        <div className="flex flex-1 items-center justify-end space-x-2">
+        <div className="flex items-center gap-2">
           <ModeToggle />
           {isLoggedIn && session?.user ? (
-            <UserNav /> // UserNav now internally uses useSession
+            <UserNav />
           ) : (
-            <Button asChild>
+            <Button asChild size="sm" className="font-medium">
               <Link href="/">
                 <LogIn className="mr-2 h-4 w-4" />
-                Login
+                Sign In
               </Link>
             </Button>
           )}
           <div className="md:hidden">
             <Sheet>
               <SheetTrigger asChild>
-                <Button variant="ghost" size="icon">
-                  <Menu className="h-5 w-5" />
+                <Button variant="ghost" size="icon" className="h-9 w-9">
+                  <Menu className="h-4 w-4" />
                   <span className="sr-only">Toggle Menu</span>
                 </Button>
               </SheetTrigger>
-              <SheetContent side="left" className="pr-0">
-                <Link href="/" className="mr-6 flex items-center space-x-2 mb-4 px-4">
-                  <Building2 className="h-6 w-6 text-primary" />
-                  <span className="font-bold sm:inline-block text-lg font-headline">
-                    Review Central
-                  </span>
-                </Link>
-                <div className="flex flex-col space-y-2 px-2">
-                   {/* MainNav for mobile also relies on isLoggedIn implicitly */}
+              <SheetContent side="left" className="w-72 p-0">
+                <div className="border-b border-border p-4">
+                  <Link href="/dashboard" className="flex items-center gap-2.5">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
+                      <Building2 className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <span className="font-semibold text-sm tracking-tight text-foreground font-headline block">
+                        Review Central
+                      </span>
+                      <span className="text-[11px] text-muted-foreground block">
+                        Performance Management
+                      </span>
+                    </div>
+                  </Link>
+                </div>
+                <div className="p-3">
                   <MainNav isMobile={true} />
                 </div>
               </SheetContent>

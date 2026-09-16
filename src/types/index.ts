@@ -88,3 +88,48 @@ export interface ReviewCycle {
   createdAt: string; // ISO string format
   updatedAt: string; // ISO string format
 }
+
+export interface MentorFeedbackActionItem {
+  id: string;
+  text: string;
+  completed: boolean;
+}
+
+export interface MentorFeedback {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  mentorId: string;
+  mentorName: string;
+  mentorRole?: string;
+  cycleId?: string;
+  cycleName?: string;
+  sharedNotes: string;
+  strengths: string[];
+  growthAreas: string[];
+  actionItems: MentorFeedbackActionItem[];
+  isShared: boolean;
+  lastUpdated: string;
+  status: 'draft' | 'in_meeting' | 'finalized';
+}
+
+export interface PeerQuestionResponse {
+  reviewerId: string;
+  reviewerName: string;
+  reviewerAvatarUrl?: string;
+  reviewerRole?: string;
+  answerText: string;
+  sentiment?: 'positive' | 'neutral' | 'constructive';
+  submittedAt?: string;
+}
+
+export interface QuestionFeedbackCollation {
+  questionId: string;
+  questionText: string;
+  order: number;
+  category?: string;
+  selfAnswer?: string;
+  selfAnswerSubmittedAt?: string;
+  peerAnswers: PeerQuestionResponse[];
+}
+

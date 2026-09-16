@@ -14,6 +14,7 @@ const SaveUserSchema = z.object({
   role: z.enum(['employee', 'team_leader', 'admin']),
   avatarUrl: z.string().url().optional().or(z.literal('')),
   mentorId: z.string().nullable().optional(),
+  adminReviewerId: z.string().nullable().optional(),
 });
 
 const UserIdSchema = z.string().min(1, 'User ID is required');
@@ -31,7 +32,16 @@ export async function getUsersAction(): Promise<User[]> {
     }
     // Note: This assumes documents have the User structure.
     // Add validation if needed (e.g., with Zod).
-    return snapshot.docs.map(doc => doc.data() as User);
+    return snapshot.docs.map(doc => {
+      const data = doc.data() as User;
+      // Ensure mentorId and adminReviewerId are consistent
+      const effectiveMentorId = data.mentorId || (data as any).adminReviewerId || null;
+      return {
+        ...data,
+        mentorId: effectiveMentorId,
+        adminReviewerId: effectiveMentorId,
+      };
+    });
   } catch (error: any) {
     console.error("Error fetching users:", error);
     if (error.code === 5) { // NOT_FOUND
@@ -52,17 +62,18 @@ export async function saveUserAction(user: Omit<User, 'id'> & { id?: string }) {
   const usersRef = adminDb.collection('users');
   
   try {
-    const mentorId = validatedUser.mentorId ? validatedUser.mentorId : null;
+    const mentorId = validatedUser.mentorId || validatedUser.adminReviewerId || null;
 
     if (validatedUser.id) {
       if (mentorId && mentorId === validatedUser.id) {
-        throw new Error('A user cannot be assigned as their own Admin/Mentor.');
+        throw new Error('A user cannot be assigned as their own Mentor.');
       }
       // Update existing user
       const userDocRef = usersRef.doc(validatedUser.id);
       await userDocRef.update({
         ...validatedUser,
         mentorId,
+        adminReviewerId: mentorId,
         email: validatedUser.email.toLowerCase(),
       });
     } else {
@@ -82,6 +93,7 @@ export async function saveUserAction(user: Omit<User, 'id'> & { id?: string }) {
         ...validatedUser,
         id: newDocRef.id,
         mentorId,
+        adminReviewerId: mentorId,
         email: finalUserEmail,
         // Provide a default placeholder avatar if none is given
         avatarUrl: validatedUser.avatarUrl || `https://placehold.co/100x100.png?text=${initials}`
@@ -91,7 +103,7 @@ export async function saveUserAction(user: Omit<User, 'id'> & { id?: string }) {
   } catch (error: any) {
     console.error("Error saving user:", error);
     // Re-throw specific, user-friendly errors
-    if (error.message.includes('already exists') || error.message.includes('own Admin/Mentor')) {
+    if (error.message.includes('already exists') || error.message.includes('own Mentor')) {
         throw error;
     }
     throw new Error("Failed to save user due to a server error.");
@@ -109,12 +121,20 @@ export async function deleteUserAction(userId: string) {
     const usersRef = adminDb.collection('users');
     await usersRef.doc(validatedUserId).delete();
 
-    // Clean up any mentorId references pointing to the deleted user
-    const menteesSnapshot = await usersRef.where('mentorId', '==', validatedUserId).get();
-    if (!menteesSnapshot.empty) {
+    // Clean up any mentorId / adminReviewerId references pointing to the deleted user
+    const [menteesSnapshot, adminReviewerSnapshot] = await Promise.all([
+      usersRef.where('mentorId', '==', validatedUserId).get(),
+      usersRef.where('adminReviewerId', '==', validatedUserId).get(),
+    ]);
+
+    const docRefsToUpdate = new Set<string>();
+    menteesSnapshot.docs.forEach((doc) => docRefsToUpdate.add(doc.id));
+    adminReviewerSnapshot.docs.forEach((doc) => docRefsToUpdate.add(doc.id));
+
+    if (docRefsToUpdate.size > 0) {
       const batch = adminDb.batch();
-      menteesSnapshot.docs.forEach((doc) => {
-        batch.update(doc.ref, { mentorId: null });
+      docRefsToUpdate.forEach((id) => {
+        batch.update(usersRef.doc(id), { mentorId: null, adminReviewerId: null });
       });
       await batch.commit();
     }

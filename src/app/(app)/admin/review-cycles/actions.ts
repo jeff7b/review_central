@@ -8,11 +8,25 @@ import { Timestamp } from 'firebase-admin/firestore';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
+function toISOString(val: unknown): string {
+  if (!val) return new Date().toISOString();
+  if (typeof (val as any).toDate === 'function') {
+    return (val as any).toDate().toISOString();
+  }
+  if (val instanceof Date) {
+    return val.toISOString();
+  }
+  if (typeof val === 'string') {
+    return val;
+  }
+  return new Date(val as any).toISOString();
+}
+
 const SaveReviewCycleSchema = z.object({
   id: z.string().optional(),
   name: z.string().trim().min(1, 'Name is required').max(100),
-  startDate: z.string().min(1, 'Start date is required'),
-  endDate: z.string().min(1, 'End date is required'),
+  startDate: z.union([z.string().min(1, 'Start date is required'), z.date()]),
+  endDate: z.union([z.string().min(1, 'End date is required'), z.date()]),
   participantIds: z.array(z.string()),
   status: z.enum(['draft', 'active', 'closed']),
 });
@@ -21,24 +35,48 @@ const SaveReviewCycleSchema = z.object({
  * Saves a new or updates an existing review cycle.
  * @param data The review cycle data.
  */
-export async function saveReviewCycleAction(data: Omit<ReviewCycle, 'createdAt' | 'updatedAt' | 'id'> & { id?: string }) {
+export async function saveReviewCycleAction(
+  data: Omit<ReviewCycle, 'createdAt' | 'updatedAt' | 'id' | 'startDate' | 'endDate'> & {
+    id?: string;
+    startDate: string | Date;
+    endDate: string | Date;
+  }
+) {
   await requireAdminSession();
   const validated = SaveReviewCycleSchema.parse(data);
   const cyclesRef = adminDb.collection('review-cycles');
   const now = Timestamp.now();
 
+  const startDate =
+    validated.startDate instanceof Date
+      ? Timestamp.fromDate(validated.startDate)
+      : Timestamp.fromDate(new Date(validated.startDate));
+
+  const endDate =
+    validated.endDate instanceof Date
+      ? Timestamp.fromDate(validated.endDate)
+      : Timestamp.fromDate(new Date(validated.endDate));
+
+  const cyclePayload = {
+    name: validated.name,
+    status: validated.status,
+    participantIds: validated.participantIds,
+    startDate,
+    endDate,
+    updatedAt: now,
+  };
+
   if (validated.id) {
     // Update existing cycle
     const docRef = cyclesRef.doc(validated.id);
-    await docRef.update({ ...validated, updatedAt: now });
+    await docRef.update(cyclePayload);
   } else {
     // Create new cycle
     const newDocRef = cyclesRef.doc();
     await newDocRef.set({
-      ...validated,
+      ...cyclePayload,
       id: newDocRef.id,
       createdAt: now,
-      updatedAt: now,
     });
   }
   revalidatePath('/admin/review-cycles');
@@ -58,10 +96,10 @@ export async function getReviewCyclesAction(): Promise<ReviewCycle[]> {
       const data = doc.data();
       return {
         ...data,
-        createdAt: (data.createdAt as Timestamp).toDate().toISOString(),
-        updatedAt: (data.updatedAt as Timestamp).toDate().toISOString(),
-        startDate: (data.startDate as Timestamp).toDate().toISOString(),
-        endDate: (data.endDate as Timestamp).toDate().toISOString(),
+        createdAt: toISOString(data.createdAt),
+        updatedAt: toISOString(data.updatedAt),
+        startDate: toISOString(data.startDate),
+        endDate: toISOString(data.endDate),
       } as ReviewCycle;
     });
   } catch (error) {
@@ -90,10 +128,10 @@ export async function getActiveReviewCyclesAction(): Promise<ReviewCycle[]> {
           const data = doc.data();
           return {
             ...data,
-            createdAt: (data.createdAt as Timestamp).toDate().toISOString(),
-            updatedAt: (data.updatedAt as Timestamp).toDate().toISOString(),
-            startDate: (data.startDate as Timestamp).toDate().toISOString(),
-            endDate: (data.endDate as Timestamp).toDate().toISOString(),
+            createdAt: toISOString(data.createdAt),
+            updatedAt: toISOString(data.updatedAt),
+            startDate: toISOString(data.startDate),
+            endDate: toISOString(data.endDate),
           } as ReviewCycle;
       });
     } catch (error: any) {

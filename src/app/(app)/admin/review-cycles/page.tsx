@@ -92,7 +92,19 @@ const UserMultiSelect = ({ allUsers, selectedUserIds, onChange, disabled = false
 };
 
 
-const ReviewCycleForm = ({ cycle, users, onSave, onCancel, isSaving }: { cycle?: Partial<ReviewCycle>, users: User[], onSave: (data: any) => void, onCancel: () => void, isSaving: boolean }) => {
+const ReviewCycleForm = ({
+  cycle,
+  users,
+  onSave,
+  onCancel,
+  isSaving,
+}: {
+  cycle?: Partial<ReviewCycle>;
+  users: User[];
+  onSave: (data: Omit<ReviewCycle, 'createdAt' | 'updatedAt' | 'id'> & { id?: string }) => void;
+  onCancel: () => void;
+  isSaving: boolean;
+}) => {
   const [name, setName] = useState(cycle?.name || '');
   const [status, setStatus] = useState<ReviewCycle['status']>(cycle?.status || 'draft');
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
@@ -111,8 +123,8 @@ const ReviewCycleForm = ({ cycle, users, onSave, onCancel, isSaving }: { cycle?:
         id: cycle?.id,
         name,
         status,
-        startDate: dateRange.from,
-        endDate: dateRange.to,
+        startDate: dateRange.from.toISOString(),
+        endDate: dateRange.to.toISOString(),
         participantIds
     });
   };
@@ -230,7 +242,7 @@ export default function AdminReviewCyclesPage() {
     fetchData();
   }, []);
 
-  const handleSaveCycle = async (data: any) => {
+  const handleSaveCycle = async (data: Parameters<typeof saveReviewCycleAction>[0]) => {
     try {
       setIsSaving(true);
       await saveReviewCycleAction(data);

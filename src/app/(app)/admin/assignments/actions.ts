@@ -34,7 +34,10 @@ const AssignmentIdSchema = z.string().min(1, 'Assignment ID is required');
  * @param data The assignment data.
  */
 export async function saveAssignmentAction(
-  data: Omit<PeerReviewAssignment, 'id' | 'createdAt' | 'updatedAt' | 'revieweeName' | 'revieweeAvatarUrl' | 'reviewerName' | 'reviewerAvatarUrl'> & {
+  data: Omit<
+    PeerReviewAssignment,
+    'id' | 'createdAt' | 'updatedAt' | 'revieweeName' | 'revieweeAvatarUrl' | 'reviewerName' | 'reviewerAvatarUrl' | 'revieweeId' | 'reviewerId'
+  > & {
     id?: string;
     reviewee: User;
     reviewer: User;

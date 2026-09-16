@@ -26,11 +26,13 @@ import {
   ListFilter,
   Shield,
   ShieldCheck,
+  CheckSquare,
 } from 'lucide-react';
 import type { User, PeerReviewAssignment, Questionnaire, ReviewCycle } from '@/types';
 import { format, parseISO } from 'date-fns';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Table,
   TableBody,
@@ -62,6 +64,7 @@ import { saveAssignmentAction, getAssignmentsByCycleAction, deleteAssignmentActi
 import { useToast } from '@/hooks/use-toast';
 import { getUsersAction } from '../staff/actions';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { BulkEditQuestionnaireDialog } from './bulk-edit-dialog';
 
 function getInitials(name: string): string {
   if (!name) return '??';
@@ -490,6 +493,8 @@ export default function AdminAssignmentsPage() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingAssignment, setEditingAssignment] = useState<PeerReviewAssignment | undefined>(undefined);
   const [preselectedRevieweeId, setPreselectedRevieweeId] = useState<string | undefined>(undefined);
+  const [selectedAssignmentIds, setSelectedAssignmentIds] = useState<Set<string>>(new Set());
+  const [isBulkEditOpen, setIsBulkEditOpen] = useState(false);
   const { toast } = useToast();
 
   const selectedCycle = useMemo(() => reviewCycles.find(c => c.id === selectedCycleId), [reviewCycles, selectedCycleId]);
@@ -594,6 +599,7 @@ export default function AdminAssignmentsPage() {
 
   useEffect(() => {
     const fetchAssignments = async () => {
+        setSelectedAssignmentIds(new Set());
         if (!selectedCycleId) {
             setAssignments([]);
             return;
@@ -854,6 +860,24 @@ export default function AdminAssignmentsPage() {
                         </AlertDialogFooter>
                       </AlertDialogContent>
                     </AlertDialog>
+                  )}
+                  {assignments.length > 0 && selectedCycle && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setIsBulkEditOpen(true)}
+                      disabled={isLoading}
+                      className="border-primary/30 hover:border-primary hover:bg-primary/5 text-primary text-xs h-9 gap-1.5 cursor-pointer shadow-2xs"
+                      title="Bulk update assigned questionnaires"
+                    >
+                      <CheckSquare className="h-3.5 w-3.5" />
+                      <span>Bulk Edit Questionnaire</span>
+                      {selectedAssignmentIds.size > 0 && (
+                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 ml-0.5">
+                          {selectedAssignmentIds.size}
+                        </Badge>
+                      )}
+                    </Button>
                   )}
                   <Select value={selectedCycleId} onValueChange={setSelectedCycleId} disabled={isLoading}>
                     <SelectTrigger className="w-full sm:w-[250px]">
@@ -1164,101 +1188,185 @@ export default function AdminAssignmentsPage() {
                   {/* Tab 3: All Pairings (Original Flat Table) */}
                   <TabsContent value="all-pairings" className="m-0">
                     {assignments.length > 0 ? (
-                      <Table>
-                        <TableHeader>
-                          <TableRow className="bg-muted/40 hover:bg-muted/40">
-                            <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground pl-6">Reviewee</TableHead>
-                            <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Reviewer</TableHead>
-                            <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Questionnaire</TableHead>
-                            <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Due Date</TableHead>
-                            <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground text-center">Status</TableHead>
-                            <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground text-right pr-6">Actions</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {assignments.map((a) => (
-                            <TableRow key={a.id} className="hover:bg-muted/20 transition-colors">
-                              <TableCell className="font-medium flex items-center pl-6">
-                                <Avatar className="h-7 w-7 mr-2.5 ring-1 ring-border">
-                                  <AvatarImage src={a.revieweeAvatarUrl} alt={a.revieweeName} />
-                                  <AvatarFallback className="text-[10px]">{getInitials(a.revieweeName)}</AvatarFallback>
-                                </Avatar>
-                                <span className="text-sm font-medium text-foreground">{a.revieweeName}</span>
-                              </TableCell>
-                              <TableCell>
-                                <div className="flex items-center">
+                      <>
+                        {selectedAssignmentIds.size > 0 && (
+                          <div className="flex flex-wrap items-center justify-between gap-2 px-6 py-2.5 bg-primary/5 border-b border-primary/20 text-xs transition-all">
+                            <div className="flex items-center gap-2">
+                              <Badge variant="default" className="text-xs h-5 px-2">
+                                {selectedAssignmentIds.size} selected
+                              </Badge>
+                              <span className="text-muted-foreground hidden sm:inline">
+                                of {assignments.length} total pairing{assignments.length === 1 ? '' : 's'}
+                              </span>
+                              {selectedAssignmentIds.size < assignments.length && (
+                                <Button
+                                  variant="link"
+                                  size="sm"
+                                  className="h-auto p-0 text-xs text-primary underline cursor-pointer"
+                                  onClick={() => setSelectedAssignmentIds(new Set(assignments.map(a => a.id)))}
+                                >
+                                  Select all {assignments.length}
+                                </Button>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                size="sm"
+                                className="h-7 text-xs font-medium gap-1.5 cursor-pointer"
+                                onClick={() => setIsBulkEditOpen(true)}
+                              >
+                                <CheckSquare className="h-3.5 w-3.5" />
+                                Update Questionnaire
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 text-xs text-muted-foreground hover:text-foreground cursor-pointer"
+                                onClick={() => setSelectedAssignmentIds(new Set())}
+                              >
+                                Clear selection
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                        <Table>
+                          <TableHeader>
+                            <TableRow className="bg-muted/40 hover:bg-muted/40">
+                              <TableHead className="w-[44px] pl-6 pr-0">
+                                <Checkbox
+                                  checked={
+                                    assignments.length > 0 && selectedAssignmentIds.size === assignments.length
+                                      ? true
+                                      : selectedAssignmentIds.size > 0
+                                      ? "indeterminate"
+                                      : false
+                                  }
+                                  onCheckedChange={(checked) => {
+                                    if (checked) {
+                                      setSelectedAssignmentIds(new Set(assignments.map(a => a.id)));
+                                    } else {
+                                      setSelectedAssignmentIds(new Set());
+                                    }
+                                  }}
+                                  aria-label="Select all assignments"
+                                />
+                              </TableHead>
+                              <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground pl-3">Reviewee</TableHead>
+                              <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Reviewer</TableHead>
+                              <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Questionnaire</TableHead>
+                              <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Due Date</TableHead>
+                              <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground text-center">Status</TableHead>
+                              <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground text-right pr-6">Actions</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {assignments.map((a) => (
+                              <TableRow
+                                key={a.id}
+                                className={cn(
+                                  "transition-colors",
+                                  selectedAssignmentIds.has(a.id) ? "bg-muted/40 hover:bg-muted/60" : "hover:bg-muted/20"
+                                )}
+                              >
+                                <TableCell className="w-[44px] pl-6 pr-0">
+                                  <Checkbox
+                                    checked={selectedAssignmentIds.has(a.id)}
+                                    onCheckedChange={(checked) => {
+                                      setSelectedAssignmentIds(prev => {
+                                        const next = new Set(prev);
+                                        if (checked) {
+                                          next.add(a.id);
+                                        } else {
+                                          next.delete(a.id);
+                                        }
+                                        return next;
+                                      });
+                                    }}
+                                    aria-label={`Select assignment for ${a.revieweeName}`}
+                                  />
+                                </TableCell>
+                                <TableCell className="font-medium flex items-center pl-3">
                                   <Avatar className="h-7 w-7 mr-2.5 ring-1 ring-border">
-                                    <AvatarImage src={a.reviewerAvatarUrl} alt={a.reviewerName} />
-                                    <AvatarFallback className="text-[10px]">{getInitials(a.reviewerName)}</AvatarFallback>
+                                    <AvatarImage src={a.revieweeAvatarUrl} alt={a.revieweeName} />
+                                    <AvatarFallback className="text-[10px]">{getInitials(a.revieweeName)}</AvatarFallback>
                                   </Avatar>
-                                  <span className="text-sm text-foreground">{a.reviewerName}</span>
-                                </div>
-                              </TableCell>
-                              <TableCell className="text-xs text-muted-foreground">
-                                {allQuestionnaires.find(q => q.id === a.questionnaireId)?.name || a.questionnaireId}
-                              </TableCell>
-                              <TableCell className="text-xs text-muted-foreground">
-                                {format(parseISO(a.dueDate), "MMM dd, yyyy")}
-                              </TableCell>
-                              <TableCell className="text-center">
-                                {renderAssignmentStatusBadge(a.status)}
-                              </TableCell>
-                              <TableCell className="text-right space-x-1 pr-6">
-                                {a.status === 'completed' && (
+                                  <span className="text-sm font-medium text-foreground">{a.revieweeName}</span>
+                                </TableCell>
+                                <TableCell>
+                                  <div className="flex items-center">
+                                    <Avatar className="h-7 w-7 mr-2.5 ring-1 ring-border">
+                                      <AvatarImage src={a.reviewerAvatarUrl} alt={a.reviewerName} />
+                                      <AvatarFallback className="text-[10px]">{getInitials(a.reviewerName)}</AvatarFallback>
+                                    </Avatar>
+                                    <span className="text-sm text-foreground">{a.reviewerName}</span>
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-xs text-muted-foreground">
+                                  {allQuestionnaires.find(q => q.id === a.questionnaireId)?.name || a.questionnaireId}
+                                </TableCell>
+                                <TableCell className="text-xs text-muted-foreground">
+                                  {format(parseISO(a.dueDate), "MMM dd, yyyy")}
+                                </TableCell>
+                                <TableCell className="text-center">
+                                  {renderAssignmentStatusBadge(a.status)}
+                                </TableCell>
+                                <TableCell className="text-right space-x-1 pr-6">
+                                  {a.status === 'completed' && (
+                                    <AlertDialog>
+                                      <AlertDialogTrigger asChild>
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          title="Clear submitted review so it can be redone"
+                                          className="text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950"
+                                        >
+                                          <RotateCcw className="h-4 w-4" />
+                                        </Button>
+                                      </AlertDialogTrigger>
+                                      <AlertDialogContent>
+                                        <AlertDialogHeader>
+                                          <AlertDialogTitle>Clear Submitted Review?</AlertDialogTitle>
+                                          <AlertDialogDescription>
+                                            Are you sure you want to clear the submitted review by <span className="font-semibold">{a.reviewerName}</span> for <span className="font-semibold">{a.revieweeName}</span>?
+                                            <br /><br />
+                                            This will reset the assignment status to pending and remove any submitted responses so the reviewer can redo their review.
+                                          </AlertDialogDescription>
+                                        </AlertDialogHeader>
+                                        <AlertDialogFooter>
+                                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                          <AlertDialogAction onClick={() => handleClearSubmittedReview(a.id)}>
+                                            Clear Review
+                                          </AlertDialogAction>
+                                        </AlertDialogFooter>
+                                      </AlertDialogContent>
+                                    </AlertDialog>
+                                  )}
+                                  <Button variant="ghost" size="icon" onClick={() => handleEdit(a)} title="Edit">
+                                    <Edit className="h-4 w-4" />
+                                  </Button>
                                   <AlertDialog>
                                     <AlertDialogTrigger asChild>
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        title="Clear submitted review so it can be redone"
-                                        className="text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950"
-                                      >
-                                        <RotateCcw className="h-4 w-4" />
+                                      <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" title="Delete Assignment">
+                                        <Trash2 className="h-3.5 w-3.5" />
                                       </Button>
                                     </AlertDialogTrigger>
                                     <AlertDialogContent>
                                       <AlertDialogHeader>
-                                        <AlertDialogTitle>Clear Submitted Review?</AlertDialogTitle>
-                                        <AlertDialogDescription>
-                                          Are you sure you want to clear the submitted review by <span className="font-semibold">{a.reviewerName}</span> for <span className="font-semibold">{a.revieweeName}</span>?
-                                          <br /><br />
-                                          This will reset the assignment status to pending and remove any submitted responses so the reviewer can redo their review.
-                                        </AlertDialogDescription>
+                                        <AlertDialogTitle>Delete assignment?</AlertDialogTitle>
+                                        <AlertDialogDescription className="text-xs text-muted-foreground">This will permanently delete this review pairing. This action cannot be reversed.</AlertDialogDescription>
                                       </AlertDialogHeader>
                                       <AlertDialogFooter>
-                                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                        <AlertDialogAction onClick={() => handleClearSubmittedReview(a.id)}>
-                                          Clear Review
-                                        </AlertDialogAction>
+                                        <AlertDialogCancel className="text-xs">Cancel</AlertDialogCancel>
+                                        <AlertDialogAction className="text-xs bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => handleDelete(a.id)}>Delete</AlertDialogAction>
                                       </AlertDialogFooter>
                                     </AlertDialogContent>
                                   </AlertDialog>
-                                )}
-                                <Button variant="ghost" size="icon" onClick={() => handleEdit(a)} title="Edit">
-                                  <Edit className="h-4 w-4" />
-                                </Button>
-                                <AlertDialog>
-                                  <AlertDialogTrigger asChild>
-                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" title="Delete Assignment">
-                                      <Trash2 className="h-3.5 w-3.5" />
-                                    </Button>
-                                  </AlertDialogTrigger>
-                                  <AlertDialogContent>
-                                    <AlertDialogHeader>
-                                      <AlertDialogTitle>Delete assignment?</AlertDialogTitle>
-                                      <AlertDialogDescription className="text-xs text-muted-foreground">This will permanently delete this review pairing. This action cannot be reversed.</AlertDialogDescription>
-                                    </AlertDialogHeader>
-                                    <AlertDialogFooter>
-                                      <AlertDialogCancel className="text-xs">Cancel</AlertDialogCancel>
-                                      <AlertDialogAction className="text-xs bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => handleDelete(a.id)}>Delete</AlertDialogAction>
-                                    </AlertDialogFooter>
-                                  </AlertDialogContent>
-                                </AlertDialog>
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </>
                     ) : (
                       <div className="text-center py-12">
                         <UserCheck className="mx-auto h-10 w-10 text-muted-foreground mb-3" />
@@ -1272,6 +1380,22 @@ export default function AdminAssignmentsPage() {
               )}
             </CardContent>
           </Card>
+        )}
+
+        {selectedCycle && (
+          <BulkEditQuestionnaireDialog
+            isOpen={isBulkEditOpen}
+            onClose={() => setIsBulkEditOpen(false)}
+            cycle={selectedCycle}
+            assignments={assignments}
+            selectedAssignmentIds={selectedAssignmentIds}
+            questionnaires={allQuestionnaires}
+            onSuccess={async () => {
+              const assignmentsData = await getAssignmentsByCycleAction(selectedCycle.id);
+              setAssignments(assignmentsData);
+              setSelectedAssignmentIds(new Set());
+            }}
+          />
         )}
       </div>
     </TooltipProvider>

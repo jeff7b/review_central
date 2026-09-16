@@ -221,3 +221,49 @@ export async function clearAllSubmittedReviewsAction(reviewCycleId: string): Pro
   }
 }
 
+const BulkUpdateQuestionnaireSchema = z.object({
+  assignmentIds: z.array(z.string().min(1, 'Assignment ID is required')).min(1, 'At least one assignment must be selected'),
+  questionnaireId: z.string().min(1, 'Questionnaire ID is required'),
+});
+
+/**
+ * Bulk updates the assigned questionnaire for multiple peer review assignments.
+ * @param assignmentIds Array of assignment IDs to update.
+ * @param questionnaireId The new questionnaire ID to set.
+ * @returns An object with success status and count of updated assignments.
+ */
+export async function bulkUpdateAssignmentQuestionnaireAction(
+  assignmentIds: string[],
+  questionnaireId: string
+): Promise<{ success: boolean; count: number }> {
+  await requireAdminSession();
+  const validated = BulkUpdateQuestionnaireSchema.parse({ assignmentIds, questionnaireId });
+
+  try {
+    const assignmentsRef = adminDb.collection('peer-review-assignments');
+    const now = Timestamp.now();
+    const chunkSize = 400; // Firestore batch maximum is 500 operations
+
+    for (let i = 0; i < validated.assignmentIds.length; i += chunkSize) {
+      const chunk = validated.assignmentIds.slice(i, i + chunkSize);
+      const batch = adminDb.batch();
+
+      for (const id of chunk) {
+        const docRef = assignmentsRef.doc(id);
+        batch.update(docRef, {
+          questionnaireId: validated.questionnaireId,
+          updatedAt: now,
+        });
+      }
+
+      await batch.commit();
+    }
+
+    revalidatePath('/admin/assignments');
+    return { success: true, count: validated.assignmentIds.length };
+  } catch (error) {
+    console.error('Error bulk updating assignment questionnaires:', error);
+    throw new Error('Failed to bulk update assignment questionnaires.');
+  }
+}
+

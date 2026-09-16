@@ -2,7 +2,7 @@
 
 import { adminDb } from '@/lib/firebase-admin';
 import { getCurrentAppUser, requireUserSession } from '@/lib/auth';
-import type { Review, Answer, Question, Questionnaire, PeerReviewAssignment, ReviewCycle } from '@/types';
+import type { Review, Answer, Question, Questionnaire, PeerReviewAssignment, ReviewCycle, User } from '@/types';
 import { Timestamp, FieldValue } from 'firebase-admin/firestore';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
@@ -21,7 +21,7 @@ function toISOString(val: unknown): string {
   return new Date(val as any).toISOString();
 }
 
-const defaultSelfQuestions: Question[] = [
+export const defaultSelfQuestions: Question[] = [
   { id: 'q1', text: 'What were your major accomplishments in the last review period?', order: 1 },
   { id: 'q2', text: 'What are some areas where you faced challenges, and how did you address them?', order: 2 },
   { id: 'q3', text: 'What are your key strengths, and how did you leverage them?', order: 3 },
@@ -29,7 +29,7 @@ const defaultSelfQuestions: Question[] = [
   { id: 'q5', text: 'What are your goals for the next review period?', order: 5 },
 ];
 
-const defaultPeerQuestions: Question[] = [
+export const defaultPeerQuestions: Question[] = [
   { id: 'pq1', text: 'How has this peer contributed to team goals?', order: 1 },
   { id: 'pq2', text: 'Describe a situation where this peer demonstrated strong collaboration skills.', order: 2 },
   { id: 'pq3', text: "What are this peer's key strengths from your perspective?", order: 3 },
@@ -67,18 +67,39 @@ export async function getPeerReviewAssignmentAction(assignmentId: string) {
     updatedAt: toISOString(assignmentData.updatedAt),
   };
 
-  // Fetch questionnaire questions
+  // Determine questionnaire: assignment questionnaireId, or review cycle peerReviewQuestionnaireId
+  let qId = assignment.questionnaireId;
+  if (!qId && assignment.reviewCycleId) {
+    const cDoc = await adminDb.collection('review-cycles').doc(assignment.reviewCycleId).get().catch(() => null);
+    if (cDoc && cDoc.exists) {
+      qId = cDoc.data()?.peerReviewQuestionnaireId;
+    }
+  }
+
   let questions: Question[] = defaultPeerQuestions;
   let questionnaireName = 'Peer Review Questionnaire';
+  let questionnaire: Questionnaire | null = null;
 
-  if (assignment.questionnaireId) {
-    const qDoc = await adminDb.collection('questionnaires').doc(assignment.questionnaireId).get().catch(() => null);
+  if (qId) {
+    const qDoc = await adminDb.collection('questionnaires').doc(qId).get().catch(() => null);
     if (qDoc && qDoc.exists) {
-      const qData = qDoc.data();
-      if (qData?.questions && qData.questions.length > 0) {
+      const qData = qDoc.data()!;
+      questionnaire = {
+        id: qDoc.id,
+        templateId: qData.templateId,
+        version: qData.version,
+        name: qData.name,
+        description: qData.description,
+        type: 'peer',
+        questions: qData.questions,
+        isActive: qData.isActive,
+        createdAt: toISOString(qData.createdAt),
+        updatedAt: toISOString(qData.updatedAt),
+      };
+      if (qData.questions && qData.questions.length > 0) {
         questions = qData.questions;
       }
-      if (qData?.name) {
+      if (qData.name) {
         questionnaireName = qData.name;
       }
     }
@@ -97,6 +118,7 @@ export async function getPeerReviewAssignmentAction(assignmentId: string) {
     assignment,
     questions,
     questionnaireName,
+    questionnaire,
     initialAnswers,
   };
 }
@@ -179,37 +201,6 @@ export async function submitPeerReviewAction(params: {
 export async function getNewSelfReviewContextAction(cycleId?: string) {
   const currentUser = await getCurrentAppUser();
 
-  // Fetch active self questionnaire
-  const questionnairesSnap = await adminDb.collection('questionnaires')
-    .where('type', '==', 'self')
-    .where('isActive', '==', true)
-    .limit(1)
-    .get()
-    .catch(() => null);
-
-  let questionnaire: Questionnaire | null = null;
-  let questions: Question[] = defaultSelfQuestions;
-
-  if (questionnairesSnap && !questionnairesSnap.empty) {
-    const doc = questionnairesSnap.docs[0];
-    const data = doc.data();
-    questionnaire = {
-      id: doc.id,
-      templateId: data.templateId,
-      version: data.version,
-      name: data.name,
-      description: data.description,
-      type: 'self',
-      questions: data.questions,
-      isActive: data.isActive,
-      createdAt: toISOString(data.createdAt),
-      updatedAt: toISOString(data.updatedAt),
-    };
-    if (data.questions && data.questions.length > 0) {
-      questions = data.questions;
-    }
-  }
-
   // Fetch active cycles
   const cyclesSnap = await adminDb.collection('review-cycles')
     .where('status', '==', 'active')
@@ -222,12 +213,82 @@ export async function getNewSelfReviewContextAction(cycleId?: string) {
       const found = cyclesSnap.docs.find(d => d.id === cycleId);
       if (found) {
         const d = found.data();
-        activeCycle = { id: found.id, ...d, createdAt: toISOString(d.createdAt), updatedAt: toISOString(d.updatedAt), startDate: toISOString(d.startDate), endDate: toISOString(d.endDate) } as ReviewCycle;
+        activeCycle = {
+          id: found.id,
+          ...d,
+          createdAt: toISOString(d.createdAt),
+          updatedAt: toISOString(d.updatedAt),
+          startDate: toISOString(d.startDate),
+          endDate: toISOString(d.endDate),
+        } as ReviewCycle;
       }
     }
     if (!activeCycle) {
       const d = cyclesSnap.docs[0].data();
-      activeCycle = { id: cyclesSnap.docs[0].id, ...d, createdAt: toISOString(d.createdAt), updatedAt: toISOString(d.updatedAt), startDate: toISOString(d.startDate), endDate: toISOString(d.endDate) } as ReviewCycle;
+      activeCycle = {
+        id: cyclesSnap.docs[0].id,
+        ...d,
+        createdAt: toISOString(d.createdAt),
+        updatedAt: toISOString(d.updatedAt),
+        startDate: toISOString(d.startDate),
+        endDate: toISOString(d.endDate),
+      } as ReviewCycle;
+    }
+  }
+
+  let questionnaire: Questionnaire | null = null;
+  let questions: Question[] = defaultSelfQuestions;
+
+  // Prefer questionnaire defined on the review cycle
+  if (activeCycle?.selfReviewQuestionnaireId) {
+    const qDoc = await adminDb.collection('questionnaires').doc(activeCycle.selfReviewQuestionnaireId).get().catch(() => null);
+    if (qDoc && qDoc.exists) {
+      const data = qDoc.data()!;
+      questionnaire = {
+        id: qDoc.id,
+        templateId: data.templateId,
+        version: data.version,
+        name: data.name,
+        description: data.description,
+        type: 'self',
+        questions: data.questions,
+        isActive: data.isActive,
+        createdAt: toISOString(data.createdAt),
+        updatedAt: toISOString(data.updatedAt),
+      };
+      if (data.questions && data.questions.length > 0) {
+        questions = data.questions;
+      }
+    }
+  }
+
+  // Fallback: fetch general active self questionnaire
+  if (!questionnaire) {
+    const questionnairesSnap = await adminDb.collection('questionnaires')
+      .where('type', '==', 'self')
+      .where('isActive', '==', true)
+      .limit(1)
+      .get()
+      .catch(() => null);
+
+    if (questionnairesSnap && !questionnairesSnap.empty) {
+      const doc = questionnairesSnap.docs[0];
+      const data = doc.data();
+      questionnaire = {
+        id: doc.id,
+        templateId: data.templateId,
+        version: data.version,
+        name: data.name,
+        description: data.description,
+        type: 'self',
+        questions: data.questions,
+        isActive: data.isActive,
+        createdAt: toISOString(data.createdAt),
+        updatedAt: toISOString(data.updatedAt),
+      };
+      if (data.questions && data.questions.length > 0) {
+        questions = data.questions;
+      }
     }
   }
 
@@ -275,7 +336,15 @@ export async function getSelfReviewAction(reviewId: string) {
     throw new Error('Unauthorized to view this review.');
   }
 
-  const questions = data.questions && data.questions.length > 0 ? data.questions : defaultSelfQuestions;
+  let questions = data.questions && data.questions.length > 0 ? data.questions : defaultSelfQuestions;
+
+  // If questionnaireId is present on review and questions are empty, fetch from questionnaire
+  if (data.questionnaireId && (!data.questions || data.questions.length === 0)) {
+    const qDoc = await adminDb.collection('questionnaires').doc(data.questionnaireId).get().catch(() => null);
+    if (qDoc && qDoc.exists) {
+      questions = qDoc.data()?.questions || questions;
+    }
+  }
 
   return {
     review: {
@@ -349,3 +418,50 @@ export async function submitSelfReviewAction(params: {
 
   return { success: true, reviewId };
 }
+
+// Aliases for compatibility
+export const getSelfReviewDataAction = async (params: { cycleId?: string; reviewId?: string }) => {
+  if (params.reviewId) {
+    const res = await getSelfReviewAction(params.reviewId);
+    return {
+      reviewCycle: null,
+      questionnaire: null,
+      existingReview: res.review,
+    };
+  }
+  const context = await getNewSelfReviewContextAction(params.cycleId);
+  return {
+    reviewCycle: context.activeCycle,
+    questionnaire: context.questionnaire,
+    existingReview: null,
+  };
+};
+
+export const saveSelfReviewAction = async (params: {
+  reviewId?: string;
+  reviewCycleId?: string | null;
+  questionnaireId?: string;
+  answers: Answer[];
+  isDraft: boolean;
+}) => {
+  return submitSelfReviewAction({
+    id: params.reviewId,
+    reviewCycleId: params.reviewCycleId || undefined,
+    questionnaireId: params.questionnaireId,
+    questions: [],
+    answers: params.answers,
+    isDraft: params.isDraft,
+  });
+};
+
+export const getPeerReviewDataAction = async (assignmentId: string) => {
+  const res = await getPeerReviewAssignmentAction(assignmentId);
+  return {
+    assignment: res.assignment,
+    reviewCycle: null,
+    questionnaire: res.questionnaire,
+    existingReview: null,
+  };
+};
+
+export const savePeerReviewAction = submitPeerReviewAction;

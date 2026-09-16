@@ -90,9 +90,12 @@ const getCategoryBadge = (category: PersonalNote['category']) => {
 const ReviewCard = ({ review }: { review: Review }) => {
   const isOverdue = review.dueDate && new Date(review.dueDate) < new Date() && review.status !== 'completed' && review.status !== 'submitted';
 
+  const isStartNew = review.type === 'self' && (review.id.startsWith('cycle-invitation-') || review.id.startsWith('self-task-'));
   const actionHref = review.type === 'self' 
-    ? (review.status === 'draft' || review.status === 'pending_submission' ? `/reviews/self/${review.id}/edit` : `/reviews/self/${review.id}`)
-    : `/reviews/peer/${review.id}`;
+    ? (isStartNew
+        ? `/reviews/self/new?cycleId=${review.reviewCycleId || review.id.replace('cycle-invitation-', '').replace('self-task-', '')}`
+        : (review.status === 'draft' || review.status === 'pending_submission' ? `/reviews/self/${review.id}/edit` : `/reviews/self/${review.id}`))
+    : `/reviews/peer/${review.assignmentId || review.id}`;
 
   return (
     <Card className="border border-border bg-card shadow-sm hover:border-border/80 hover:shadow transition-all flex flex-col justify-between">

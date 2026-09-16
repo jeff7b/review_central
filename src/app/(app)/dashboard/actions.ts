@@ -39,6 +39,7 @@ export interface DashboardData {
 
 /**
  * Fetches all dashboard data for the authenticated user from live Firestore collections.
+ * Uses the Review Cycle's defined Self and Peer Review questionnaires to build user review tasks.
  */
 export async function getDashboardDataAction(): Promise<DashboardData> {
   const currentUser = await getCurrentAppUser();
@@ -63,6 +64,7 @@ export async function getDashboardDataAction(): Promise<DashboardData> {
           status: d.status || 'draft',
           dueDate: d.dueDate ? toISOString(d.dueDate) : undefined,
           questionnaireId: d.questionnaireId || '',
+          reviewCycleId: d.reviewCycleId || undefined,
           questions: d.questions || [],
           answers: d.answers || [],
           createdAt: toISOString(d.createdAt),
@@ -71,28 +73,37 @@ export async function getDashboardDataAction(): Promise<DashboardData> {
       });
     }
 
-    // Also check for active cycles where user is participant but has not started self-review
+    // Check for active cycles where user is participant but has not started self-review
     const activeCyclesSnap = await adminDb.collection('review-cycles')
       .where('status', '==', 'active')
       .get()
       .catch(() => null);
 
+    const activeCyclesMap = new Map<string, ReviewCycle>();
+
     if (activeCyclesSnap && !activeCyclesSnap.empty) {
       for (const cycleDoc of activeCyclesSnap.docs) {
-        const cycle = cycleDoc.data() as ReviewCycle;
+        const cycle = {
+          ...cycleDoc.data(),
+          id: cycleDoc.id,
+        } as ReviewCycle;
+        activeCyclesMap.set(cycleDoc.id, cycle);
+
         const isParticipant = cycle.participantIds && cycle.participantIds.includes(userId);
         if (isParticipant) {
           const alreadyHasReview = userSelfReviews.some(
-            r => (r as any).reviewCycleId === cycleDoc.id || r.title.includes(cycle.name)
+            r => r.reviewCycleId === cycleDoc.id || r.title.includes(cycle.name)
           );
           if (!alreadyHasReview) {
+            // Task generated using the cycle's defined selfReviewQuestionnaireId
             userSelfReviews.push({
               id: `cycle-invitation-${cycleDoc.id}`,
               title: `${cycle.name} Self-Review`,
               type: 'self',
               status: 'pending_submission',
               dueDate: toISOString(cycle.endDate),
-              questionnaireId: '',
+              questionnaireId: cycle.selfReviewQuestionnaireId || '',
+              reviewCycleId: cycleDoc.id,
               questions: [],
               answers: [],
               createdAt: toISOString(cycle.createdAt),
@@ -117,12 +128,17 @@ export async function getDashboardDataAction(): Promise<DashboardData> {
         if (a.status === 'completed') reviewStatus = 'completed';
         else if (a.status === 'in_progress') reviewStatus = 'draft';
 
+        const cycle = a.reviewCycleId ? activeCyclesMap.get(a.reviewCycleId) : undefined;
+        const effectiveQuestionnaireId = a.questionnaireId || cycle?.peerReviewQuestionnaireId || '';
+
         peerReviewsAssigned.push({
           id: doc.id,
+          assignmentId: doc.id,
           title: `Peer Review for ${a.revieweeName}`,
           type: 'peer',
           status: reviewStatus,
-          dueDate: a.dueDate ? toISOString(a.dueDate) : undefined,
+          dueDate: a.dueDate ? toISOString(a.dueDate) : (cycle ? toISOString(cycle.endDate) : undefined),
+          reviewCycleId: a.reviewCycleId,
           reviewee: {
             id: a.revieweeId,
             name: a.revieweeName,
@@ -130,7 +146,7 @@ export async function getDashboardDataAction(): Promise<DashboardData> {
             role: 'employee',
             avatarUrl: a.revieweeAvatarUrl,
           },
-          questionnaireId: a.questionnaireId,
+          questionnaireId: effectiveQuestionnaireId,
           questions: [],
           createdAt: toISOString(a.createdAt),
           updatedAt: toISOString(a.updatedAt),
@@ -234,6 +250,30 @@ export async function getDashboardDataAction(): Promise<DashboardData> {
       currentUser,
     };
   }
+}
+
+/**
+ * Backward compatibility alias for getUserDashboardDataAction
+ */
+export async function getUserDashboardDataAction() {
+  const data = await getDashboardDataAction();
+  const allReviews = [...data.selfReviews, ...data.peerReviewsAssigned];
+  const now = new Date();
+  const pendingCount = allReviews.filter(r => r.status === 'draft' || r.status === 'pending_submission').length;
+  const completedCount = allReviews.filter(r => r.status === 'submitted' || r.status === 'completed').length;
+  const overdueCount = allReviews.filter(r => r.dueDate && new Date(r.dueDate) < now && r.status !== 'completed' && r.status !== 'submitted').length;
+  const totalCount = allReviews.length;
+  const completionRate = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+
+  return {
+    selfReviews: data.selfReviews,
+    peerReviews: data.peerReviewsAssigned,
+    cycles: [],
+    pendingCount,
+    completedCount,
+    overdueCount,
+    completionRate,
+  };
 }
 
 /**

@@ -18,6 +18,7 @@ export default function SubmitPeerReviewPage() {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [initialAnswers, setInitialAnswers] = useState<Answer[]>([]);
   const [formTitle, setFormTitle] = useState('Peer Review');
+  const [formDescription, setFormDescription] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
 
@@ -31,6 +32,10 @@ export default function SubmitPeerReviewPage() {
         setQuestions(res.questions);
         setInitialAnswers(res.initialAnswers);
         setFormTitle(`Peer Review for ${res.assignment.revieweeName}`);
+        setFormDescription(
+          res.questionnaire?.description ||
+          `Please provide constructive and specific feedback for ${res.assignment.revieweeName}. Your insights are valuable for their development.`
+        );
       } catch (error) {
         console.error('Failed to load peer review assignment:', error);
         toast({
@@ -117,7 +122,7 @@ export default function SubmitPeerReviewPage() {
         onSubmit={handleSubmitPeerReview}
         onSaveDraft={handleSaveDraft}
         formTitle={formTitle}
-        formDescription={`Please provide constructive and specific feedback for ${assignment.revieweeName}. Your insights are valuable for their development.`}
+        formDescription={formDescription}
       />
     </div>
   );

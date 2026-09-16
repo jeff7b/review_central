@@ -13,10 +13,10 @@ export default function EditSelfReviewPage() {
   const router = useRouter();
   const params = useParams();
   const reviewId = params.id as string;
+  const { toast } = useToast();
 
   const [reviewData, setReviewData] = useState<Review | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const { toast } = useToast();
 
   useEffect(() => {
     async function loadReview() {
@@ -120,7 +120,7 @@ export default function EditSelfReviewPage() {
       <ReviewForm
         reviewType="self"
         questions={reviewData.questions}
-        initialAnswers={reviewData.answers}
+        initialAnswers={reviewData.answers || []}
         onSubmit={handleSubmitEditReview}
         onSaveDraft={handleSaveDraftEditReview}
         formTitle={`Edit: ${reviewData.title}`}

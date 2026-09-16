@@ -169,7 +169,7 @@ const AssignmentForm = ({
   
   const [reviewee, setReviewee] = useState<User | undefined>(getInitialUser(assignment?.revieweeId || initialRevieweeId));
   const [reviewer, setReviewer] = useState<User | undefined>(getInitialUser(assignment?.reviewerId));
-  const [questionnaireId, setQuestionnaireId] = useState<string | undefined>(assignment?.questionnaireId || questionnaires[0]?.id);
+  const [questionnaireId, setQuestionnaireId] = useState<string | undefined>(assignment?.questionnaireId || cycle.peerReviewQuestionnaireId || questionnaires[0]?.id);
   const [status, setStatus] = useState<PeerReviewAssignment['status']>(assignment?.status || 'pending');
   const [dueDate, setDueDate] = useState<Date | undefined>(assignment ? parseISO(assignment.dueDate) : new Date(cycle.endDate));
   const { toast } = useToast();
@@ -477,6 +477,105 @@ const AdminShortcutButton = ({
   );
 };
 
+const AddReviewerDropdown = ({
+  reviewee,
+  users,
+  cycle,
+  assignmentsForReviewee,
+  isSaving,
+  onAssignReviewer,
+}: {
+  reviewee: User;
+  users: User[];
+  cycle: ReviewCycle;
+  assignmentsForReviewee: PeerReviewAssignment[];
+  isSaving: boolean;
+  onAssignReviewer: (reviewee: User, reviewer: User) => void;
+}) => {
+  const [open, setOpen] = useState(false);
+
+  const assignedReviewerIds = useMemo(
+    () => new Set(assignmentsForReviewee.map(a => a.reviewerId)),
+    [assignmentsForReviewee]
+  );
+
+  const possibleReviewers = useMemo(() => {
+    const participantSet = new Set(cycle.participantIds);
+    return users
+      .filter(u => u.id !== reviewee.id && !assignedReviewerIds.has(u.id))
+      .sort((a, b) => {
+        const aInCycle = participantSet.has(a.id);
+        const bInCycle = participantSet.has(b.id);
+        if (aInCycle && !bInCycle) return -1;
+        if (!aInCycle && bInCycle) return 1;
+        return a.name.localeCompare(b.name);
+      });
+  }, [users, reviewee.id, assignedReviewerIds, cycle.participantIds]);
+
+  if (possibleReviewers.length === 0) {
+    return (
+      <Button
+        variant="ghost"
+        size="sm"
+        disabled
+        className="h-8 text-xs font-medium text-muted-foreground opacity-50 cursor-not-allowed"
+      >
+        <PlusCircle className="h-3.5 w-3.5 mr-1" />
+        No more reviewers
+      </Button>
+    );
+  }
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={isSaving}
+          className="h-8 text-xs font-medium gap-1 text-muted-foreground hover:text-foreground"
+        >
+          <PlusCircle className="h-3.5 w-3.5 text-primary" />
+          Add Reviewer
+          <ChevronsUpDown className="h-3 w-3 opacity-50 ml-0.5" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-64 p-0" align="end">
+        <Command>
+          <CommandInput placeholder="Search reviewer..." />
+          <CommandList>
+            <CommandEmpty>No reviewer found.</CommandEmpty>
+            <CommandGroup heading="Available Reviewers">
+              {possibleReviewers.map((user) => (
+                <CommandItem
+                  key={user.id}
+                  value={user.name}
+                  onSelect={() => {
+                    onAssignReviewer(reviewee, user);
+                    setOpen(false);
+                  }}
+                  className="cursor-pointer py-1.5"
+                >
+                  <Avatar className="h-5 w-5 mr-2 ring-1 ring-border">
+                    <AvatarImage src={user.avatarUrl} alt={user.name} />
+                    <AvatarFallback className="text-[9px] font-medium">{getInitials(user.name)}</AvatarFallback>
+                  </Avatar>
+                  <div className="flex flex-col truncate flex-1 min-w-0">
+                    <span className="font-medium text-foreground text-xs truncate">{user.name}</span>
+                    <span className="text-[10px] text-muted-foreground truncate">
+                      {user.role === 'admin' ? 'Admin' : user.role === 'team_leader' ? 'Team Leader' : user.email || 'Employee'}
+                    </span>
+                  </div>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+};
+
 export default function AdminAssignmentsPage() {
   const [assignments, setAssignments] = useState<PeerReviewAssignment[]>([]);
   const [users, setUsers] = useState<User[]>([]);
@@ -695,29 +794,32 @@ export default function AdminAssignmentsPage() {
     }
   };
 
-  const handleAssignAdmin = async (reviewee: User, adminUser: User) => {
+  const handleAssignReviewer = async (reviewee: User, reviewer: User) => {
     if (!selectedCycle) return;
-    if (reviewee.id === adminUser.id) {
+    if (reviewee.id === reviewer.id) {
       toast({
         variant: "destructive",
         title: "Cannot Assign",
-        description: "An admin cannot be assigned to review themselves.",
+        description: "A user cannot be assigned to review themselves.",
       });
       return;
     }
 
     const alreadyAssigned = assignments.some(
-      a => a.revieweeId === reviewee.id && a.reviewerId === adminUser.id
+      a => a.revieweeId === reviewee.id && a.reviewerId === reviewer.id
     );
     if (alreadyAssigned) {
       toast({
         title: "Already Assigned",
-        description: `${adminUser.name} is already assigned to review ${reviewee.name}.`,
+        description: `${reviewer.name} is already assigned to review ${reviewee.name}.`,
       });
       return;
     }
 
-    const targetQuestionnaire = allQuestionnaires.find(q => q.isActive) || allQuestionnaires[0];
+    const targetQuestionnaire =
+      (selectedCycle.peerReviewQuestionnaireId && allQuestionnaires.find(q => q.id === selectedCycle.peerReviewQuestionnaireId)) ||
+      allQuestionnaires.find(q => q.isActive) ||
+      allQuestionnaires[0];
     if (!targetQuestionnaire) {
       toast({
         variant: "destructive",
@@ -732,27 +834,31 @@ export default function AdminAssignmentsPage() {
       await saveAssignmentAction({
         reviewCycleId: selectedCycle.id,
         reviewee,
-        reviewer: adminUser,
+        reviewer,
         questionnaireId: targetQuestionnaire.id,
         status: 'pending',
         dueDate: selectedCycle.endDate,
       });
       toast({
-        title: "Admin Assigned",
-        description: `${adminUser.name} has been assigned to review ${reviewee.name}.`,
+        title: "Reviewer Assigned",
+        description: `${reviewer.name} has been assigned to review ${reviewee.name}.`,
       });
       const assignmentsData = await getAssignmentsByCycleAction(selectedCycle.id);
       setAssignments(assignmentsData);
     } catch (error) {
-      console.error("Failed to assign admin:", error);
+      console.error("Failed to assign reviewer:", error);
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Could not assign admin as reviewer.",
+        description: "Could not assign reviewer.",
       });
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleAssignAdmin = (reviewee: User, adminUser: User) => {
+    return handleAssignReviewer(reviewee, adminUser);
   };
 
   const closeForm = () => {
@@ -991,16 +1097,14 @@ export default function AdminAssignmentsPage() {
                                   />
                                 </TableCell>
                                 <TableCell className="text-right pr-6">
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => handleAddNew(reviewee.id)}
-                                    className="h-8 text-xs font-medium text-muted-foreground hover:text-foreground"
-                                    title={`Add a reviewer for ${reviewee.name}`}
-                                  >
-                                    <PlusCircle className="h-3.5 w-3.5 mr-1" />
-                                    Add Reviewer
-                                  </Button>
+                                  <AddReviewerDropdown
+                                    reviewee={reviewee}
+                                    users={users}
+                                    cycle={selectedCycle}
+                                    assignmentsForReviewee={revieweeAssignments}
+                                    isSaving={isSaving}
+                                    onAssignReviewer={handleAssignReviewer}
+                                  />
                                 </TableCell>
                               </TableRow>
                             );

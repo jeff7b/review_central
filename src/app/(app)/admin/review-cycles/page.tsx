@@ -16,10 +16,11 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Badge } from "@/components/ui/badge";
 import { format, parseISO } from 'date-fns';
 import type { DateRange } from 'react-day-picker';
-import type { ReviewCycle, User } from '@/types';
+import type { ReviewCycle, User, Questionnaire } from '@/types';
 import { cn } from '@/lib/utils';
 import { getReviewCyclesAction, saveReviewCycleAction } from './actions';
 import { getUsersAction } from '../staff/actions';
+import { getActiveQuestionnairesAction } from '../questionnaires/actions';
 import { useToast } from "@/hooks/use-toast";
 import {
   Table,
@@ -95,12 +96,16 @@ const UserMultiSelect = ({ allUsers, selectedUserIds, onChange, disabled = false
 const ReviewCycleForm = ({
   cycle,
   users,
+  selfQuestionnaires,
+  peerQuestionnaires,
   onSave,
   onCancel,
   isSaving,
 }: {
   cycle?: Partial<ReviewCycle>;
   users: User[];
+  selfQuestionnaires: Questionnaire[];
+  peerQuestionnaires: Questionnaire[];
   onSave: (data: Omit<ReviewCycle, 'createdAt' | 'updatedAt' | 'id'> & { id?: string }) => void;
   onCancel: () => void;
   isSaving: boolean;
@@ -112,6 +117,8 @@ const ReviewCycleForm = ({
       to: cycle?.endDate ? parseISO(cycle.endDate) : undefined,
   });
   const [participantIds, setParticipantIds] = useState<string[]>(cycle?.participantIds || []);
+  const [selfReviewQuestionnaireId, setSelfReviewQuestionnaireId] = useState<string>(cycle?.selfReviewQuestionnaireId || 'none');
+  const [peerReviewQuestionnaireId, setPeerReviewQuestionnaireId] = useState<string>(cycle?.peerReviewQuestionnaireId || 'none');
   const { toast } = useToast();
 
   const handleSubmit = () => {
@@ -125,7 +132,9 @@ const ReviewCycleForm = ({
         status,
         startDate: dateRange.from.toISOString(),
         endDate: dateRange.to.toISOString(),
-        participantIds
+        participantIds,
+        selfReviewQuestionnaireId: selfReviewQuestionnaireId !== 'none' ? selfReviewQuestionnaireId : null,
+        peerReviewQuestionnaireId: peerReviewQuestionnaireId !== 'none' ? peerReviewQuestionnaireId : null,
     });
   };
 
@@ -133,7 +142,7 @@ const ReviewCycleForm = ({
     <DialogContent className="sm:max-w-2xl">
       <DialogHeader>
         <DialogTitle>{cycle?.id ? 'Edit' : 'Create New'} Review Cycle</DialogTitle>
-        <DialogDescription>Define the timeline, participants, and status for a review period.</DialogDescription>
+        <DialogDescription>Define the timeline, questionnaires, participants, and status for a review period.</DialogDescription>
       </DialogHeader>
       <div className="grid gap-6 py-4">
         <div className="grid grid-cols-4 items-center gap-4">
@@ -181,7 +190,39 @@ const ReviewCycleForm = ({
               </Popover>
           </div>
         </div>
-         <div className="grid grid-cols-4 items-center gap-4">
+        <div className="grid grid-cols-4 items-center gap-4">
+          <Label htmlFor="self-questionnaire" className="text-right">Self-Review Questionnaire</Label>
+          <Select value={selfReviewQuestionnaireId} onValueChange={setSelfReviewQuestionnaireId}>
+            <SelectTrigger id="self-questionnaire" className="col-span-3">
+              <SelectValue placeholder="Select questionnaire..." />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">No questionnaire assigned</SelectItem>
+              {selfQuestionnaires.map((q) => (
+                <SelectItem key={q.id} value={q.id}>
+                  {q.name} (v{q.version})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="grid grid-cols-4 items-center gap-4">
+          <Label htmlFor="peer-questionnaire" className="text-right">Peer-Review Questionnaire</Label>
+          <Select value={peerReviewQuestionnaireId} onValueChange={setPeerReviewQuestionnaireId}>
+            <SelectTrigger id="peer-questionnaire" className="col-span-3">
+              <SelectValue placeholder="Select questionnaire..." />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">No questionnaire assigned</SelectItem>
+              {peerQuestionnaires.map((q) => (
+                <SelectItem key={q.id} value={q.id}>
+                  {q.name} (v{q.version})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="grid grid-cols-4 items-center gap-4">
           <Label htmlFor="status" className="text-right">Status</Label>
           <Select value={status} onValueChange={(v) => setStatus(v as ReviewCycle['status'])}>
               <SelectTrigger id="status" className="col-span-3">
@@ -215,21 +256,34 @@ const ReviewCycleForm = ({
 export default function AdminReviewCyclesPage() {
   const [cycles, setCycles] = useState<ReviewCycle[]>([]);
   const [users, setUsers] = useState<User[]>([]);
+  const [selfQuestionnaires, setSelfQuestionnaires] = useState<Questionnaire[]>([]);
+  const [peerQuestionnaires, setPeerQuestionnaires] = useState<Questionnaire[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [editingCycle, setEditingCycle] = useState<Partial<ReviewCycle> | undefined>(undefined);
   const { toast } = useToast();
 
+  const questionnairesMap = useMemo(() => {
+    const map = new Map<string, Questionnaire>();
+    for (const q of selfQuestionnaires) map.set(q.id, q);
+    for (const q of peerQuestionnaires) map.set(q.id, q);
+    return map;
+  }, [selfQuestionnaires, peerQuestionnaires]);
+
   const fetchData = async () => {
     try {
       setIsLoading(true);
-      const [cyclesData, usersData] = await Promise.all([
+      const [cyclesData, usersData, selfQs, peerQs] = await Promise.all([
         getReviewCyclesAction(),
-        getUsersAction()
+        getUsersAction(),
+        getActiveQuestionnairesAction('self'),
+        getActiveQuestionnairesAction('peer'),
       ]);
       setCycles(cyclesData);
       setUsers(usersData);
+      setSelfQuestionnaires(selfQs);
+      setPeerQuestionnaires(peerQs);
     } catch (error) {
       console.error("Failed to fetch data:", error);
       toast({ variant: "destructive", title: "Error", description: "Could not load required page data." });
@@ -301,7 +355,7 @@ export default function AdminReviewCyclesPage() {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-2 border-b border-border">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground font-headline">Manage Review Cycles</h1>
-          <p className="text-xs text-muted-foreground">Define evaluation timelines, participants, and company-wide cycle schedules</p>
+          <p className="text-xs text-muted-foreground">Define evaluation timelines, questionnaires, participants, and company-wide cycle schedules</p>
         </div>
         <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
           <DialogTrigger asChild>
@@ -313,6 +367,8 @@ export default function AdminReviewCyclesPage() {
             <ReviewCycleForm
                 cycle={editingCycle}
                 users={users}
+                selfQuestionnaires={selfQuestionnaires}
+                peerQuestionnaires={peerQuestionnaires}
                 onSave={handleSaveCycle}
                 onCancel={closeForm}
                 isSaving={isSaving}
@@ -342,6 +398,7 @@ export default function AdminReviewCyclesPage() {
                 <TableRow className="bg-muted/40 hover:bg-muted/40">
                   <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground pl-6">Cycle Name</TableHead>
                   <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Date Range</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Questionnaires</TableHead>
                   <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground text-center">Participants</TableHead>
                   <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground text-center">Status</TableHead>
                   <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground text-right pr-6">Actions</TableHead>
@@ -353,6 +410,30 @@ export default function AdminReviewCyclesPage() {
                     <TableCell className="font-medium text-sm text-foreground pl-6">{c.name}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {format(parseISO(c.startDate), "MMM dd, yyyy")} - {format(parseISO(c.endDate), "MMM dd, yyyy")}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground w-8">Self:</span>
+                          {c.selfReviewQuestionnaireId && questionnairesMap.get(c.selfReviewQuestionnaireId) ? (
+                            <Badge variant="outline" className="text-[11px] font-normal py-0 h-5 border-border bg-muted/40 text-foreground">
+                              {questionnairesMap.get(c.selfReviewQuestionnaireId)!.name}
+                            </Badge>
+                          ) : (
+                            <span className="text-xs text-muted-foreground italic">None</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground w-8">Peer:</span>
+                          {c.peerReviewQuestionnaireId && questionnairesMap.get(c.peerReviewQuestionnaireId) ? (
+                            <Badge variant="outline" className="text-[11px] font-normal py-0 h-5 border-border bg-muted/40 text-foreground">
+                              {questionnairesMap.get(c.peerReviewQuestionnaireId)!.name}
+                            </Badge>
+                          ) : (
+                            <span className="text-xs text-muted-foreground italic">None</span>
+                          )}
+                        </div>
+                      </div>
                     </TableCell>
                     <TableCell className="text-center text-xs font-medium">
                       <span className="inline-flex items-center rounded-md bg-muted px-2 py-0.5 text-xs text-foreground">

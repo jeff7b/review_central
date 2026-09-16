@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { ReviewForm } from '@/components/reviews/review-form';
 import type { Question, Answer, Questionnaire, ReviewCycle } from '@/types';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -9,7 +9,7 @@ import { Loader2 } from 'lucide-react';
 import { getNewSelfReviewContextAction, submitSelfReviewAction } from '@/app/(app)/reviews/actions';
 import { useToast } from '@/hooks/use-toast';
 
-export default function NewSelfReviewPage() {
+function SelfReviewContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const cycleId = searchParams.get('cycleId') || undefined;
@@ -103,6 +103,7 @@ export default function NewSelfReviewPage() {
   }
 
   const title = activeCycle ? `${activeCycle.name} Self-Review` : (questionnaire?.name || 'New Self-Review');
+  const description = questionnaire?.description || "Please provide thoughtful and honest responses to the questions below. Your feedback is valuable for your growth and development.";
 
   return (
     <div className="space-y-4 max-w-3xl mx-auto">
@@ -117,8 +118,16 @@ export default function NewSelfReviewPage() {
         onSubmit={handleSubmitSelfReview}
         onSaveDraft={handleSaveDraft}
         formTitle={title}
-        formDescription="Please provide thoughtful and honest responses to the questions below. Your feedback is valuable for your growth and development."
+        formDescription={description}
       />
     </div>
+  );
+}
+
+export default function NewSelfReviewPage() {
+  return (
+    <Suspense fallback={<div className="flex justify-center items-center py-20"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>}>
+      <SelfReviewContent />
+    </Suspense>
   );
 }

@@ -31,6 +31,8 @@ export interface Review {
   questionnaireId: string;
   questions: Question[];
   answers?: Answer[];
+  reviewCycleId?: string;
+  assignmentId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -85,6 +87,8 @@ export interface ReviewCycle {
   endDate: string; // ISO string format
   participantIds: string[]; // Array of user IDs
   status: 'draft' | 'active' | 'closed';
+  selfReviewQuestionnaireId?: string | null;
+  peerReviewQuestionnaireId?: string | null;
   createdAt: string; // ISO string format
   updatedAt: string; // ISO string format
 }

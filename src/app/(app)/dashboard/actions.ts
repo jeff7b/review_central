@@ -42,6 +42,7 @@ export interface DashboardData {
 /**
  * Fetches all dashboard data for the authenticated user from live Firestore collections,
  * scoped to a specific Review Cycle.
+ * Uses the Review Cycle's defined Self and Peer Review questionnaires to build user review tasks.
  */
 export async function getDashboardDataAction(cycleId?: string): Promise<DashboardData> {
   const currentUser = await getCurrentAppUser();
@@ -61,6 +62,8 @@ export async function getDashboardDataAction(cycleId?: string): Promise<Dashboar
           status: d.status || 'draft',
           startDate: toISOString(d.startDate),
           endDate: toISOString(d.endDate),
+          selfReviewQuestionnaireId: d.selfReviewQuestionnaireId || null,
+          peerReviewQuestionnaireId: d.peerReviewQuestionnaireId || null,
           participantIds: Array.isArray(d.participantIds) ? d.participantIds : [],
           createdAt: toISOString(d.createdAt),
           updatedAt: toISOString(d.updatedAt),
@@ -69,6 +72,8 @@ export async function getDashboardDataAction(cycleId?: string): Promise<Dashboar
       // Sort by startDate desc
       reviewCycles.sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
     }
+
+    const cyclesMap = new Map<string, ReviewCycle>(reviewCycles.map(c => [c.id, c]));
 
     // Determine selected cycle:
     let selectedCycleId = cycleId || '';
@@ -101,7 +106,8 @@ export async function getDashboardDataAction(cycleId?: string): Promise<Dashboar
             type: 'self',
             status: d.status || 'draft',
             dueDate: d.dueDate ? toISOString(d.dueDate) : (selectedCycle ? toISOString(selectedCycle.endDate) : undefined),
-            questionnaireId: d.questionnaireId || '',
+            questionnaireId: d.questionnaireId || selectedCycle?.selfReviewQuestionnaireId || '',
+            reviewCycleId: d.reviewCycleId || selectedCycle?.id,
             questions: d.questions || [],
             answers: d.answers || [],
             createdAt: toISOString(d.createdAt),
@@ -116,7 +122,7 @@ export async function getDashboardDataAction(cycleId?: string): Promise<Dashboar
       const isParticipant = !selectedCycle.participantIds || selectedCycle.participantIds.length === 0 || selectedCycle.participantIds.includes(userId);
       if (isParticipant) {
         const alreadyHasReview = userSelfReviews.some(
-          r => (r as any).reviewCycleId === selectedCycle.id || r.title.includes(selectedCycle.name)
+          r => r.reviewCycleId === selectedCycle.id || (r.title && selectedCycle.name && r.title.includes(selectedCycle.name))
         );
         if (!alreadyHasReview) {
           userSelfReviews.push({
@@ -125,7 +131,8 @@ export async function getDashboardDataAction(cycleId?: string): Promise<Dashboar
             type: 'self',
             status: 'pending_submission',
             dueDate: toISOString(selectedCycle.endDate),
-            questionnaireId: '',
+            questionnaireId: selectedCycle.selfReviewQuestionnaireId || '',
+            reviewCycleId: selectedCycle.id,
             questions: [],
             answers: [],
             createdAt: toISOString(selectedCycle.createdAt),
@@ -153,12 +160,17 @@ export async function getDashboardDataAction(cycleId?: string): Promise<Dashboar
         if (a.status === 'completed') reviewStatus = 'completed';
         else if (a.status === 'in_progress') reviewStatus = 'draft';
 
+        const cycle = a.reviewCycleId ? cyclesMap.get(a.reviewCycleId) : undefined;
+        const effectiveQuestionnaireId = a.questionnaireId || cycle?.peerReviewQuestionnaireId || '';
+
         peerReviewsAssigned.push({
           id: doc.id,
+          assignmentId: doc.id,
           title: `Peer Review for ${a.revieweeName}`,
           type: 'peer',
           status: reviewStatus,
-          dueDate: a.dueDate ? toISOString(a.dueDate) : undefined,
+          dueDate: a.dueDate ? toISOString(a.dueDate) : (cycle ? toISOString(cycle.endDate) : undefined),
+          reviewCycleId: a.reviewCycleId,
           reviewee: {
             id: a.revieweeId,
             name: a.revieweeName,
@@ -166,7 +178,7 @@ export async function getDashboardDataAction(cycleId?: string): Promise<Dashboar
             role: 'employee',
             avatarUrl: a.revieweeAvatarUrl,
           },
-          questionnaireId: a.questionnaireId,
+          questionnaireId: effectiveQuestionnaireId,
           questions: [],
           createdAt: toISOString(a.createdAt),
           updatedAt: toISOString(a.updatedAt),
@@ -278,6 +290,30 @@ export async function getDashboardDataAction(cycleId?: string): Promise<Dashboar
       selectedCycleId: '',
     };
   }
+}
+
+/**
+ * Backward compatibility alias for getUserDashboardDataAction
+ */
+export async function getUserDashboardDataAction() {
+  const data = await getDashboardDataAction();
+  const allReviews = [...data.selfReviews, ...data.peerReviewsAssigned];
+  const now = new Date();
+  const pendingCount = allReviews.filter(r => r.status === 'draft' || r.status === 'pending_submission').length;
+  const completedCount = allReviews.filter(r => r.status === 'submitted' || r.status === 'completed').length;
+  const overdueCount = allReviews.filter(r => r.dueDate && new Date(r.dueDate) < now && r.status !== 'completed' && r.status !== 'submitted').length;
+  const totalCount = allReviews.length;
+  const completionRate = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+
+  return {
+    selfReviews: data.selfReviews,
+    peerReviews: data.peerReviewsAssigned,
+    cycles: [],
+    pendingCount,
+    completedCount,
+    overdueCount,
+    completionRate,
+  };
 }
 
 /**

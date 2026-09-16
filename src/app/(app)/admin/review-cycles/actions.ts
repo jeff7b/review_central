@@ -29,6 +29,8 @@ const SaveReviewCycleSchema = z.object({
   endDate: z.union([z.string().min(1, 'End date is required'), z.date()]),
   participantIds: z.array(z.string()),
   status: z.enum(['draft', 'active', 'closed']),
+  selfReviewQuestionnaireId: z.string().optional().nullable(),
+  peerReviewQuestionnaireId: z.string().optional().nullable(),
 });
 
 /**
@@ -63,6 +65,8 @@ export async function saveReviewCycleAction(
     participantIds: validated.participantIds,
     startDate,
     endDate,
+    selfReviewQuestionnaireId: validated.selfReviewQuestionnaireId || null,
+    peerReviewQuestionnaireId: validated.peerReviewQuestionnaireId || null,
     updatedAt: now,
   };
 
@@ -96,6 +100,8 @@ export async function getReviewCyclesAction(): Promise<ReviewCycle[]> {
       const data = doc.data();
       return {
         ...data,
+        selfReviewQuestionnaireId: data.selfReviewQuestionnaireId || null,
+        peerReviewQuestionnaireId: data.peerReviewQuestionnaireId || null,
         createdAt: toISOString(data.createdAt),
         updatedAt: toISOString(data.updatedAt),
         startDate: toISOString(data.startDate),
@@ -128,6 +134,8 @@ export async function getActiveReviewCyclesAction(): Promise<ReviewCycle[]> {
           const data = doc.data();
           return {
             ...data,
+            selfReviewQuestionnaireId: data.selfReviewQuestionnaireId || null,
+            peerReviewQuestionnaireId: data.peerReviewQuestionnaireId || null,
             createdAt: toISOString(data.createdAt),
             updatedAt: toISOString(data.updatedAt),
             startDate: toISOString(data.startDate),

@@ -60,13 +60,15 @@ export async function saveAssignmentAction(
     status: validated.status,
     dueDate: validated.dueDate,
     updatedAt: now,
-    ...(validated.status === 'pending' ? { reviewId: FieldValue.delete() } : {}),
   };
 
   if (validated.id) {
     // Update existing assignment
     const docRef = assignmentsRef.doc(validated.id);
-    await docRef.update(assignmentPayload);
+    await docRef.update({
+      ...assignmentPayload,
+      ...(validated.status === 'pending' ? { reviewId: FieldValue.delete() } : {}),
+    });
   } else {
     // Create new assignment
     const newDocRef = assignmentsRef.doc();

@@ -92,3 +92,29 @@ export interface ReviewCycle {
   createdAt: string; // ISO string format
   updatedAt: string; // ISO string format
 }
+
+export interface PersonalNote {
+  id: string;
+  userId?: string;
+  title: string;
+  content: string;
+  category: 'achievement' | 'goal' | 'meeting' | 'reflection';
+  date: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface HistoricalEvaluation {
+  id: string;
+  cycleTitle: string;
+  period: string;
+  completedDate: string;
+  type: string;
+  overallRating?: string;
+  ratingTier?: 'exceeds' | 'meets' | 'high';
+  reviewer: string;
+  reviewerRole: string;
+  summary: string;
+  keyStrengths: string[];
+  growthAreas: string[];
+}

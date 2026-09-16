@@ -1,124 +1,109 @@
 "use client";
 
-import { Suspense, useState, useEffect } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { ReviewForm } from '@/components/reviews/review-form';
-import type { Question, Answer, Questionnaire, ReviewCycle, Review } from '@/types';
+import type { Question, Answer, Questionnaire, ReviewCycle } from '@/types';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Loader2 } from 'lucide-react';
+import { getNewSelfReviewContextAction, submitSelfReviewAction } from '@/app/(app)/reviews/actions';
 import { useToast } from '@/hooks/use-toast';
-import { getSelfReviewDataAction, saveSelfReviewAction } from '../../actions';
-
-const fallbackQuestions: Question[] = [
-  { id: 'q1', text: 'What were your major accomplishments in the last review period?', order: 1 },
-  { id: 'q2', text: 'What are some areas where you faced challenges, and how did you address them?', order: 2 },
-  { id: 'q3', text: 'What are your key strengths, and how did you leverage them?', order: 3 },
-  { id: 'q4', text: 'What are your areas for development, and what steps will you take to improve?', order: 4 },
-  { id: 'q5', text: 'What are your goals for the next review period?', order: 5 },
-];
 
 function SelfReviewContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const cycleId = searchParams.get('cycleId') || undefined;
+
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [questionnaire, setQuestionnaire] = useState<Questionnaire | null>(null);
+  const [activeCycle, setActiveCycle] = useState<ReviewCycle | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
 
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
-  const [cycle, setCycle] = useState<ReviewCycle | null>(null);
-  const [questionnaire, setQuestionnaire] = useState<Questionnaire | null>(null);
-  const [existingReview, setExistingReview] = useState<Review | null>(null);
-
   useEffect(() => {
-    async function loadData() {
+    async function loadContext() {
       try {
         setIsLoading(true);
-        const data = await getSelfReviewDataAction({ cycleId });
-        setCycle(data.reviewCycle);
-        setQuestionnaire(data.questionnaire);
-        setExistingReview(data.existingReview);
-      } catch (err) {
-        console.error('Failed to load self review questions:', err);
+        const res = await getNewSelfReviewContextAction(cycleId);
+        setQuestions(res.questions);
+        setQuestionnaire(res.questionnaire);
+        setActiveCycle(res.activeCycle);
+      } catch (error) {
+        console.error('Failed to load self-review context:', error);
         toast({
           variant: 'destructive',
-          title: 'Error',
-          description: 'Could not load self-review questions. Using standard template.',
+          title: 'Error loading questionnaire',
+          description: 'Could not fetch the self-review questionnaire.',
         });
       } finally {
         setIsLoading(false);
       }
     }
-    loadData();
+    loadContext();
   }, [cycleId, toast]);
 
-  const questions = questionnaire?.questions?.length ? questionnaire.questions : fallbackQuestions;
-
   const handleSubmitSelfReview = async (answers: Answer[]) => {
-    if (!questionnaire && !questions.length) return;
     try {
-      setIsSaving(true);
-      await saveSelfReviewAction({
-        reviewId: existingReview?.id,
-        reviewCycleId: cycle?.id || cycleId || null,
-        questionnaireId: questionnaire?.id || 'default-self',
+      await submitSelfReviewAction({
+        title: activeCycle ? `${activeCycle.name} Self-Review` : (questionnaire?.name || 'Self-Review'),
+        questionnaireId: questionnaire?.id,
+        questions,
         answers,
         isDraft: false,
+        reviewCycleId: activeCycle?.id,
+        dueDate: activeCycle?.endDate,
       });
       toast({
-        title: 'Self-Review Submitted',
-        description: 'Your self-assessment has been successfully submitted.',
+        title: 'Self-review submitted',
+        description: 'Your self-evaluation has been submitted successfully.',
       });
       router.push('/dashboard');
-    } catch (err) {
-      console.error('Failed to submit self review:', err);
+    } catch (error: any) {
+      console.error('Error submitting self-review:', error);
       toast({
         variant: 'destructive',
-        title: 'Submission Failed',
-        description: 'Could not submit your review. Please try again.',
+        title: 'Error submitting review',
+        description: error.message || 'Could not submit your self-review.',
       });
-    } finally {
-      setIsSaving(false);
     }
   };
 
   const handleSaveDraft = async (answers: Answer[]) => {
     try {
-      setIsSaving(true);
-      const res = await saveSelfReviewAction({
-        reviewId: existingReview?.id,
-        reviewCycleId: cycle?.id || cycleId || null,
-        questionnaireId: questionnaire?.id || 'default-self',
+      await submitSelfReviewAction({
+        title: activeCycle ? `${activeCycle.name} Self-Review` : (questionnaire?.name || 'Self-Review'),
+        questionnaireId: questionnaire?.id,
+        questions,
         answers,
         isDraft: true,
+        reviewCycleId: activeCycle?.id,
+        dueDate: activeCycle?.endDate,
       });
-      if (res?.reviewId && !existingReview?.id) {
-        setExistingReview(prev => (prev ? { ...prev, id: res.reviewId } : ({ id: res.reviewId } as Review)));
-      }
       toast({
-        title: 'Draft Saved',
-        description: 'Your draft has been saved. You can complete it anytime.',
+        title: 'Draft saved',
+        description: 'Your self-review responses have been saved as draft.',
       });
-    } catch (err) {
-      console.error('Failed to save draft:', err);
+    } catch (error: any) {
+      console.error('Error saving draft:', error);
       toast({
         variant: 'destructive',
-        title: 'Error',
-        description: 'Could not save draft.',
+        title: 'Error saving draft',
+        description: error.message || 'Could not save draft.',
       });
-    } finally {
-      setIsSaving(false);
     }
   };
 
   if (isLoading) {
     return (
-      <div className="flex justify-center items-center py-20">
+      <div className="flex flex-col items-center justify-center py-20 space-y-3">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <p className="text-xs text-muted-foreground">Loading self-review questions...</p>
       </div>
     );
   }
 
-  const formTitle = cycle ? `${cycle.name} - Self-Review` : (questionnaire?.name || 'Self-Review');
+  const title = activeCycle ? `${activeCycle.name} Self-Review` : (questionnaire?.name || 'New Self-Review');
+  const description = questionnaire?.description || "Please provide thoughtful and honest responses to the questions below. Your feedback is valuable for your growth and development.";
 
   return (
     <div className="space-y-4 max-w-3xl mx-auto">
@@ -130,11 +115,10 @@ function SelfReviewContent() {
       <ReviewForm
         reviewType="self"
         questions={questions}
-        initialAnswers={existingReview?.answers || []}
         onSubmit={handleSubmitSelfReview}
         onSaveDraft={handleSaveDraft}
-        formTitle={formTitle}
-        formDescription={questionnaire?.description || "Please provide thoughtful and honest responses to the questions below. Your feedback is valuable for your growth and development."}
+        formTitle={title}
+        formDescription={description}
       />
     </div>
   );

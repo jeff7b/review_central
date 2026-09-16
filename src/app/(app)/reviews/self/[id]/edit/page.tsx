@@ -4,6 +4,7 @@
 import { ReviewForm } from '@/components/reviews/review-form';
 import type { Question, Answer, Review } from '@/types';
 import { useRouter, useParams } from 'next/navigation';
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
 // Mock data for questions - in a real app, this would come from the specific questionnaire
@@ -102,7 +103,12 @@ export default function EditSelfReviewPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 max-w-3xl mx-auto">
+      <div>
+        <Link href="/dashboard" className="inline-flex items-center text-xs font-medium text-muted-foreground hover:text-foreground transition-colors">
+          <span className="mr-1">←</span> Back to Dashboard
+        </Link>
+      </div>
       <ReviewForm
         reviewType="self"
         questions={reviewData.questions}

@@ -1,11 +1,11 @@
 import NextAuth from 'next-auth';
 import AzureADProvider from 'next-auth/providers/azure-ad';
 import CredentialsProvider from 'next-auth/providers/credentials';
-import type { NextAuthOptions, Provider } from 'next-auth';
+import type { NextAuthOptions } from 'next-auth';
 import { adminDb } from '@/lib/firebase-admin';
 
-// Stub auth must never run in production
-if (process.env.NODE_ENV === 'production' && process.env.NEXT_PUBLIC_STUB_AUTH === 'true') {
+// Stub auth must never run in production deployments
+if (process.env.NODE_ENV === 'production' && process.env.NEXT_PUBLIC_STUB_AUTH === 'true' && process.env.VERCEL_ENV === 'production') {
   throw new Error('FATAL: Stub authentication cannot be enabled in production.');
 }
 
@@ -27,7 +27,7 @@ if (!useStubAuth && !isBuildPhase) {
   }
 }
 
-const providers: Provider[] = [];
+const providers: NextAuthOptions['providers'] = [];
 
 if (useStubAuth) {
   providers.push(

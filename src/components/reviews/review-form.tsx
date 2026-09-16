@@ -6,7 +6,9 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import type { Question, Answer, Review } from '@/types';
-import { Save, Send, AlertCircle } from 'lucide-react';
+import { Progress } from '@/components/ui/progress';
+import { Badge } from '@/components/ui/badge';
+import { Save, Send, AlertCircle, CheckCircle2, UserCheck, FileText } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 interface ReviewFormProps {
@@ -38,6 +40,10 @@ export function ReviewForm({
   );
   const [showConfirmation, setShowConfirmation] = useState(false);
 
+  const answeredCount = answers.filter(a => a.answerText.trim() !== '').length;
+  const isAllAnswered = questions.length > 0 && answeredCount === questions.length;
+  const progressPercent = questions.length > 0 ? Math.round((answeredCount / questions.length) * 100) : 0;
+
   const handleAnswerChange = (questionId: string, text: string) => {
     setAnswers(prevAnswers =>
       prevAnswers.map(ans =>
@@ -49,10 +55,8 @@ export function ReviewForm({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // Basic validation: check if all questions have some answer
-    const allAnswered = answers.every(ans => ans.answerText.trim() !== '');
-    if (!allAnswered) {
-      setShowConfirmation(true); // Or show specific error messages
+    if (!isAllAnswered) {
+      setShowConfirmation(true);
       return;
     }
     onSubmit(answers);
@@ -61,57 +65,97 @@ export function ReviewForm({
   const handleSaveDraft = () => {
     if (onSaveDraft) {
       onSaveDraft(answers);
-      // Add toast notification for draft saved
     }
   };
 
   return (
-    <Card className="w-full max-w-3xl mx-auto shadow-xl">
-      <CardHeader>
-        <CardTitle className="text-2xl font-bold font-headline">{formTitle}</CardTitle>
-        {formDescription && <CardDescription>{formDescription}</CardDescription>}
+    <Card className="w-full max-w-3xl mx-auto border border-border bg-card shadow-sm">
+      <CardHeader className="border-b border-border/50 pb-5">
+        <div className="flex items-center justify-between gap-2 mb-1">
+          <Badge variant="outline" className="text-xs font-medium border-primary/30 bg-primary/5 text-primary">
+            {reviewType === 'self' ? <FileText className="mr-1 h-3 w-3" /> : <UserCheck className="mr-1 h-3 w-3" />}
+            {reviewType === 'self' ? 'Self Assessment' : 'Peer Evaluation'}
+          </Badge>
+          <span className="text-xs font-medium text-muted-foreground">
+            {answeredCount} of {questions.length} questions completed ({progressPercent}%)
+          </span>
+        </div>
+        <CardTitle className="text-xl font-bold font-headline">{formTitle}</CardTitle>
+        {formDescription && <CardDescription className="text-xs">{formDescription}</CardDescription>}
         {reviewType === 'peer' && revieweeName && (
-          <p className="text-sm text-muted-foreground">Providing feedback for: <strong>{revieweeName}</strong></p>
+          <div className="mt-2 rounded-md bg-muted/40 p-2.5 border border-border/50 flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">Subject being evaluated:</span>
+            <span className="text-xs font-semibold text-foreground">{revieweeName}</span>
+          </div>
         )}
+        <div className="pt-2">
+          <Progress value={progressPercent} className="h-1.5" />
+        </div>
       </CardHeader>
-      <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-8">
-          {questions.sort((a,b) => a.order - b.order).map((question, index) => (
-            <div key={question.id} className="space-y-2">
-              <Label htmlFor={`question-${question.id}`} className="text-base font-medium">
-                {index + 1}. {question.text}
-              </Label>
-              <Textarea
-                id={`question-${question.id}`}
-                value={answers.find(ans => ans.questionId === question.id)?.answerText || ''}
-                onChange={(e) => handleAnswerChange(question.id, e.target.value)}
-                placeholder="Your response..."
-                rows={5}
-                className="resize-none"
-              />
-            </div>
-          ))}
+      
+      <CardContent className="pt-6">
+        <form onSubmit={handleSubmit} className="space-y-6">
+          {questions.sort((a,b) => a.order - b.order).map((question, index) => {
+            const currentAnswer = answers.find(ans => ans.questionId === question.id)?.answerText || '';
+            const isAnswered = currentAnswer.trim().length > 0;
+
+            return (
+              <div key={question.id} className="rounded-lg border border-border/70 bg-card p-4 space-y-3 transition-colors hover:border-border">
+                <div className="flex items-start gap-3">
+                  <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${isAnswered ? 'bg-emerald-50 text-emerald-700 border border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-400' : 'bg-muted text-muted-foreground'}`}>
+                    {isAnswered ? <CheckCircle2 className="h-3.5 w-3.5" /> : index + 1}
+                  </span>
+                  <div className="space-y-1 flex-1">
+                    <Label htmlFor={`question-${question.id}`} className="text-sm font-semibold text-foreground leading-snug cursor-pointer">
+                      {question.text}
+                    </Label>
+                  </div>
+                </div>
+                
+                <div className="pl-9">
+                  <Textarea
+                    id={`question-${question.id}`}
+                    value={currentAnswer}
+                    onChange={(e) => handleAnswerChange(question.id, e.target.value)}
+                    placeholder="Provide constructive, specific examples and context..."
+                    rows={4}
+                    className="text-xs resize-y min-h-[90px] border-border"
+                  />
+                  <div className="flex justify-end pt-1">
+                    <span className="text-[10px] text-muted-foreground">
+                      {currentAnswer.length} characters
+                    </span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
           
           {showConfirmation && (
-             <Alert variant="destructive">
+            <Alert variant="destructive" className="py-2.5">
               <AlertCircle className="h-4 w-4" />
-              <AlertTitle>Incomplete Review</AlertTitle>
-              <AlertDescription>
-                Please answer all questions before submitting. You can save as draft if you are not ready.
+              <AlertTitle className="text-xs font-semibold">Incomplete Questionnaire</AlertTitle>
+              <AlertDescription className="text-xs">
+                Please provide an answer for all questions before submitting. You can save your draft at any time.
               </AlertDescription>
             </Alert>
           )}
 
-          <CardFooter className="flex flex-col sm:flex-row justify-end space-y-2 sm:space-y-0 sm:space-x-3 pt-6 px-0">
-            {onSaveDraft && (
-              <Button type="button" variant="outline" onClick={handleSaveDraft} className="w-full sm:w-auto">
-                <Save className="mr-2 h-4 w-4" /> Save Draft
+          <div className="flex flex-col sm:flex-row justify-between items-center gap-3 pt-4 border-t border-border/50">
+            <span className="text-xs text-muted-foreground">
+              {isAllAnswered ? 'All questions answered. Ready to submit.' : `${questions.length - answeredCount} question(s) remaining`}
+            </span>
+            <div className="flex items-center gap-2.5 w-full sm:w-auto">
+              {onSaveDraft && (
+                <Button type="button" variant="outline" size="sm" onClick={handleSaveDraft} className="w-full sm:w-auto text-xs font-medium h-9">
+                  <Save className="mr-1.5 h-3.5 w-3.5" /> Save Draft
+                </Button>
+              )}
+              <Button type="submit" size="sm" className="w-full sm:w-auto text-xs font-medium h-9 shadow-sm">
+                <Send className="mr-1.5 h-3.5 w-3.5" /> Submit Review
               </Button>
-            )}
-            <Button type="submit" className="w-full sm:w-auto">
-              <Send className="mr-2 h-4 w-4" /> Submit Review
-            </Button>
-          </CardFooter>
+            </div>
+          </div>
         </form>
       </CardContent>
     </Card>

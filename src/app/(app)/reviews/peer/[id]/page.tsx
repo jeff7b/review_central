@@ -1,8 +1,9 @@
 "use client";
 
 import { ReviewForm } from '@/components/reviews/review-form';
-import type { Question, Answer, User } from '@/types'; // Assuming User type is defined
-import { useRouter, useParams } from 'next/navigation'; // Corrected import
+import type { Question, Answer, User } from '@/types';
+import { useRouter, useParams } from 'next/navigation';
+import Link from 'next/link';
 
 // Mock data - in a real app, this would be fetched based on the review ID or assignment
 const mockPeerReviewQuestions: Question[] = [
@@ -27,23 +28,22 @@ export default function SubmitPeerReviewPage() {
   const params = useParams();
   const reviewId = params.id as string; // Or assignment ID
 
-  // In a real app, fetch review details, questions, and reviewee info using reviewId
-
   const handleSubmitPeerReview = (answers: Answer[]) => {
     console.log(`Peer review for ${mockReviewee.name} (ID: ${reviewId}) submitted:`, answers);
-    // Send data to backend
     router.push('/dashboard');
-     // Add toast notification for success
   };
   
   const handleSaveDraft = (answers: Answer[]) => {
     console.log(`Peer review draft for ${mockReviewee.name} (ID: ${reviewId}) saved:`, answers);
-    // Implement draft saving logic
-    // Add toast notification for draft saved
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 max-w-3xl mx-auto">
+      <div>
+        <Link href="/dashboard" className="inline-flex items-center text-xs font-medium text-muted-foreground hover:text-foreground transition-colors">
+          <span className="mr-1">←</span> Back to Dashboard
+        </Link>
+      </div>
       <ReviewForm
         reviewType="peer"
         questions={mockPeerReviewQuestions}

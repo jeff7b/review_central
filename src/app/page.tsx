@@ -46,33 +46,45 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-background p-4">
-      <div className="absolute top-8 left-8 flex items-center space-x-2">
-        <Building2 className="h-8 w-8 text-primary" />
-        <span className="text-2xl font-bold font-headline text-foreground">Review Central</span>
+    <div className="flex min-h-screen flex-col items-center justify-center bg-background px-4 py-12">
+      <div className="w-full max-w-md space-y-6">
+        <div className="flex flex-col items-center text-center space-y-2">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm mb-2">
+            <Building2 className="h-6 w-6" />
+          </div>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground font-headline">Review Central</h1>
+          <p className="text-xs text-muted-foreground">Enterprise Performance & Review Management</p>
+        </div>
+
+        <Card className="border border-border bg-card shadow-sm">
+          <CardHeader className="space-y-1.5 text-center pb-4">
+            <CardTitle className="text-xl font-semibold font-headline">Welcome back</CardTitle>
+            <CardDescription className="text-xs">
+              Sign in with your organization Microsoft 365 credentials
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Button onClick={handleLogin} className="w-full h-11 text-sm font-medium shadow-sm">
+              <LogIn className="mr-2 h-4 w-4" />
+              Sign in with Office 365
+            </Button>
+            <div className="rounded-md bg-muted/60 border border-border/50 p-3 text-center">
+              <p className="text-[11px] text-muted-foreground">
+                Corporate Single Sign-On (SSO) enabled. No password required.
+              </p>
+            </div>
+          </CardContent>
+          <CardFooter className="flex flex-col items-center pt-2 pb-6 border-t border-border/40 text-center">
+            <p className="text-xs text-muted-foreground">
+              Need assistance? <Link href="#" className="font-medium text-primary hover:underline">Contact IT Helpdesk</Link>
+            </p>
+          </CardFooter>
+        </Card>
+
+        <footer className="text-center text-xs text-muted-foreground">
+          © {new Date().getFullYear()} Review Central Enterprise. All rights reserved.
+        </footer>
       </div>
-      <Card className="w-full max-w-md shadow-xl">
-        <CardHeader className="space-y-1 text-center">
-          <CardTitle className="text-3xl font-bold font-headline">Welcome</CardTitle>
-          <CardDescription>
-            Sign in with your Office 365 account to continue
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <Button onClick={handleLogin} className="w-full text-lg py-6">
-            <LogIn className="mr-2 h-5 w-5" />
-            Sign in with Office 365
-          </Button>
-        </CardContent>
-        <CardFooter className="flex flex-col items-center space-y-2">
-           <p className="text-sm text-muted-foreground">
-            Trouble signing in? <Link href="#" className="text-primary hover:underline">Contact Support</Link>
-          </p>
-        </CardFooter>
-      </Card>
-      <footer className="absolute bottom-8 text-center text-sm text-muted-foreground">
-        © {new Date().getFullYear()} Review Central. All rights reserved.
-      </footer>
     </div>
   );
 }

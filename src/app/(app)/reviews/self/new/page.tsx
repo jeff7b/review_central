@@ -2,7 +2,8 @@
 
 import { ReviewForm } from '@/components/reviews/review-form';
 import type { Question, Answer } from '@/types';
-import { useRouter } from 'next/navigation'; // Corrected import
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 
 // Mock data for questions - in a real app, this would come from a questionnaire template
 const mockSelfReviewQuestions: Question[] = [
@@ -32,7 +33,12 @@ export default function NewSelfReviewPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 max-w-3xl mx-auto">
+      <div>
+        <Link href="/dashboard" className="inline-flex items-center text-xs font-medium text-muted-foreground hover:text-foreground transition-colors">
+          <span className="mr-1">←</span> Back to Dashboard
+        </Link>
+      </div>
       <ReviewForm
         reviewType="self"
         questions={mockSelfReviewQuestions}

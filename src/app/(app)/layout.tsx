@@ -66,22 +66,34 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <SiteHeader />
       <div className="flex flex-1">
         <aside className={cn(
-          "hidden md:flex flex-col border-r transition-all duration-300 ease-in-out",
-          isSidebarCollapsed ? "w-16" : "w-64"
+          "hidden md:flex flex-col border-r border-border bg-card transition-all duration-300 ease-in-out",
+          isSidebarCollapsed ? "w-16" : "w-60"
         )}>
-          <ScrollArea className="flex-1 py-4">
+          <ScrollArea className="flex-1 py-2">
             <MainNav isCollapsed={isSidebarCollapsed} />
           </ScrollArea>
-          <div className="p-2 border-t">
-            <Button variant="ghost" size="icon" onClick={toggleSidebar} className="w-full justify-center">
-              {isSidebarCollapsed ? <PanelRightOpen className="h-5 w-5" /> : <PanelLeftOpen className="h-5 w-5" />}
+          <div className="p-2.5 border-t border-border bg-card">
+            <Button
+              variant="ghost"
+              size={isSidebarCollapsed ? "icon" : "sm"}
+              onClick={toggleSidebar}
+              className={cn("w-full text-muted-foreground hover:text-foreground", !isSidebarCollapsed && "justify-start px-2.5 text-xs font-medium")}
+            >
+              {isSidebarCollapsed ? (
+                <PanelRightOpen className="h-4 w-4" />
+              ) : (
+                <>
+                  <PanelLeftOpen className="mr-2 h-4 w-4" />
+                  <span>Collapse sidebar</span>
+                </>
+              )}
               <span className="sr-only">{isSidebarCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}</span>
             </Button>
           </div>
         </aside>
-        <main className="flex-1 overflow-x-hidden">
-          <ScrollArea className="h-[calc(100vh-4rem)]"> {/* Adjust height based on header */}
-            <div className="container mx-auto p-4 sm:p-6 lg:p-8">
+        <main className="flex-1 overflow-x-hidden bg-background">
+          <ScrollArea className="h-[calc(100vh-3.5rem)]">
+            <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
              {children}
             </div>
           </ScrollArea>

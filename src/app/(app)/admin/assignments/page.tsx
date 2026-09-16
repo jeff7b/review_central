@@ -169,7 +169,7 @@ const AssignmentForm = ({
   
   const [reviewee, setReviewee] = useState<User | undefined>(getInitialUser(assignment?.revieweeId || initialRevieweeId));
   const [reviewer, setReviewer] = useState<User | undefined>(getInitialUser(assignment?.reviewerId));
-  const [questionnaireId, setQuestionnaireId] = useState<string | undefined>(assignment?.questionnaireId || questionnaires[0]?.id);
+  const [questionnaireId, setQuestionnaireId] = useState<string | undefined>(assignment?.questionnaireId || cycle.peerReviewQuestionnaireId || questionnaires[0]?.id);
   const [status, setStatus] = useState<PeerReviewAssignment['status']>(assignment?.status || 'pending');
   const [dueDate, setDueDate] = useState<Date | undefined>(assignment ? parseISO(assignment.dueDate) : new Date(cycle.endDate));
   const { toast } = useToast();
@@ -717,7 +717,10 @@ export default function AdminAssignmentsPage() {
       return;
     }
 
-    const targetQuestionnaire = allQuestionnaires.find(q => q.isActive) || allQuestionnaires[0];
+    const targetQuestionnaire =
+      (selectedCycle.peerReviewQuestionnaireId && allQuestionnaires.find(q => q.id === selectedCycle.peerReviewQuestionnaireId)) ||
+      allQuestionnaires.find(q => q.isActive) ||
+      allQuestionnaires[0];
     if (!targetQuestionnaire) {
       toast({
         variant: "destructive",

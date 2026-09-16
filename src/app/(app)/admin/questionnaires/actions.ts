@@ -199,3 +199,30 @@ export async function deactivateQuestionnaireTemplateAction(templateId: string) 
     await batch.commit();
     revalidatePath('/admin/questionnaires');
 }
+
+/**
+ * Fetches a specific questionnaire by its document ID.
+ * @param id The ID of the questionnaire document.
+ * @returns A promise resolving to Questionnaire or null if not found.
+ */
+export async function getQuestionnaireByIdAction(id: string): Promise<Questionnaire | null> {
+  await requireUserSession();
+  const validatedId = z.string().min(1).parse(id);
+  try {
+    const doc = await adminDb.collection('questionnaires').doc(validatedId).get();
+    if (!doc.exists) {
+      return null;
+    }
+    const data = doc.data()!;
+    const createdAt = data.createdAt as Timestamp | undefined;
+    const updatedAt = data.updatedAt as Timestamp | undefined;
+    return {
+      ...data,
+      createdAt: createdAt ? createdAt.toDate().toISOString() : new Date().toISOString(),
+      updatedAt: updatedAt ? updatedAt.toDate().toISOString() : new Date().toISOString(),
+    } as Questionnaire;
+  } catch (error) {
+    console.error(`Error fetching questionnaire ${id}:`, error);
+    return null;
+  }
+}

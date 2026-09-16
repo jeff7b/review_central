@@ -1,12 +1,16 @@
 "use client";
 
 import { ReviewForm } from '@/components/reviews/review-form';
-import type { Question, Answer, User } from '@/types';
+import type { Question, Answer, PeerReviewAssignment, ReviewCycle, Questionnaire, Review } from '@/types';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { Loader2 } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
+import { getPeerReviewDataAction, savePeerReviewAction } from '../../actions';
 
-// Mock data - in a real app, this would be fetched based on the review ID or assignment
-const mockPeerReviewQuestions: Question[] = [
+const fallbackQuestions: Question[] = [
   { id: 'pq1', text: 'How has this peer contributed to team goals?', order: 1 },
   { id: 'pq2', text: 'Describe a situation where this peer demonstrated strong collaboration skills.', order: 2 },
   { id: 'pq3', text: 'What are this peer\'s key strengths from your perspective?', order: 3 },
@@ -14,28 +18,120 @@ const mockPeerReviewQuestions: Question[] = [
   { id: 'pq5', text: 'Provide any additional feedback you think would be helpful.', order: 5 },
 ];
 
-// Mock reviewee data - this would be fetched based on `params.id`
-const mockReviewee: User = {
-  id: 'user123',
-  name: 'Alex Chen',
-  email: 'alex.chen@example.com',
-  role: 'employee',
-  avatarUrl: 'https://placehold.co/100x100.png',
-};
-
 export default function SubmitPeerReviewPage() {
   const router = useRouter();
   const params = useParams();
-  const reviewId = params.id as string; // Or assignment ID
+  const assignmentId = params.id as string;
+  const { toast } = useToast();
 
-  const handleSubmitPeerReview = (answers: Answer[]) => {
-    console.log(`Peer review for ${mockReviewee.name} (ID: ${reviewId}) submitted:`, answers);
-    router.push('/dashboard');
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [assignment, setAssignment] = useState<PeerReviewAssignment | null>(null);
+  const [cycle, setCycle] = useState<ReviewCycle | null>(null);
+  const [questionnaire, setQuestionnaire] = useState<Questionnaire | null>(null);
+  const [existingReview, setExistingReview] = useState<Review | null>(null);
+
+  useEffect(() => {
+    async function loadData() {
+      if (!assignmentId) return;
+      try {
+        setIsLoading(true);
+        const data = await getPeerReviewDataAction(assignmentId);
+        setAssignment(data.assignment);
+        setCycle(data.reviewCycle);
+        setQuestionnaire(data.questionnaire);
+        setExistingReview(data.existingReview);
+      } catch (err: any) {
+        console.error('Failed to load peer review data:', err);
+        toast({
+          variant: 'destructive',
+          title: 'Error',
+          description: err.message || 'Could not load peer review assignment.',
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    loadData();
+  }, [assignmentId, toast]);
+
+  const questions =
+    (questionnaire?.questions?.length && questionnaire.questions) ||
+    (existingReview?.questions?.length && existingReview.questions) ||
+    fallbackQuestions;
+
+  const handleSubmitPeerReview = async (answers: Answer[]) => {
+    try {
+      setIsSaving(true);
+      await savePeerReviewAction({
+        assignmentId,
+        answers,
+        isDraft: false,
+      });
+      toast({
+        title: 'Peer Review Submitted',
+        description: `Your feedback for ${assignment?.revieweeName || 'peer'} has been recorded.`,
+      });
+      router.push('/dashboard');
+    } catch (err: any) {
+      console.error('Failed to submit peer review:', err);
+      toast({
+        variant: 'destructive',
+        title: 'Submission Failed',
+        description: err.message || 'Could not submit peer review.',
+      });
+    } finally {
+      setIsSaving(false);
+    }
   };
-  
-  const handleSaveDraft = (answers: Answer[]) => {
-    console.log(`Peer review draft for ${mockReviewee.name} (ID: ${reviewId}) saved:`, answers);
+
+  const handleSaveDraft = async (answers: Answer[]) => {
+    try {
+      setIsSaving(true);
+      await savePeerReviewAction({
+        assignmentId,
+        answers,
+        isDraft: true,
+      });
+      toast({
+        title: 'Draft Saved',
+        description: 'Your progress has been saved. You can resume anytime.',
+      });
+    } catch (err: any) {
+      console.error('Failed to save draft:', err);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: err.message || 'Could not save draft.',
+      });
+    } finally {
+      setIsSaving(false);
+    }
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center items-center py-20">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (!assignment) {
+    return (
+      <div className="text-center py-20">
+        <h3 className="text-base font-semibold text-foreground">Assignment Not Found</h3>
+        <p className="text-xs text-muted-foreground mt-1 mb-4">The assigned peer review could not be found or you do not have permission to view it.</p>
+        <Button asChild size="sm">
+          <Link href="/dashboard">Back to Dashboard</Link>
+        </Button>
+      </div>
+    );
+  }
+
+  const revieweeName = assignment.revieweeName;
+  const formTitle = `Peer Review for ${revieweeName}`;
+  const formDescription = questionnaire?.description || `Please provide constructive and specific feedback for ${revieweeName}. Your insights are valuable for their professional development.`;
 
   return (
     <div className="space-y-4 max-w-3xl mx-auto">
@@ -46,12 +142,13 @@ export default function SubmitPeerReviewPage() {
       </div>
       <ReviewForm
         reviewType="peer"
-        questions={mockPeerReviewQuestions}
-        revieweeName={mockReviewee.name}
+        questions={questions}
+        revieweeName={revieweeName}
+        initialAnswers={existingReview?.answers || []}
         onSubmit={handleSubmitPeerReview}
         onSaveDraft={handleSaveDraft}
-        formTitle={`Peer Review for ${mockReviewee.name}`}
-        formDescription={`Please provide constructive and specific feedback for ${mockReviewee.name}. Your insights are valuable for their development.`}
+        formTitle={formTitle}
+        formDescription={formDescription}
       />
     </div>
   );

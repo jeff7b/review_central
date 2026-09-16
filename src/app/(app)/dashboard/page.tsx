@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -34,21 +34,11 @@ import {
   Award,
   Sparkles,
   Plus,
-  ExternalLink
+  ExternalLink,
+  Loader2,
 } from 'lucide-react';
 import type { Review } from '@/types';
-
-// Mock Reviews
-const mockSelfReviews: Review[] = [
-  { id: 'sr1', title: 'Q3 2024 Self-Review', type: 'self', status: 'submitted', dueDate: '2024-09-15', questions: [], answers: [], questionnaireId: 'q1', createdAt: '', updatedAt: '' },
-  { id: 'sr2', title: 'Mid-Year Self-Review 2024', type: 'self', status: 'draft', dueDate: '2024-07-30', questions: [], answers: [], questionnaireId: 'q2', createdAt: '', updatedAt: '' },
-];
-
-const mockPeerReviewsAssigned: Review[] = [
-  { id: 'pr1', title: 'Peer Review for Alice Smith', type: 'peer', status: 'pending_submission', dueDate: '2024-09-20', reviewee: { id: 'u1', name: 'Alice Smith', email:'', role:'employee' }, questions: [], answers: [], questionnaireId: 'q3', createdAt: '', updatedAt: '' },
-  { id: 'pr2', title: 'Peer Review for Bob Johnson', type: 'peer', status: 'completed', dueDate: '2024-08-10', reviewee: { id: 'u2', name: 'Bob Johnson', email:'', role:'employee' }, questions: [], answers: [], questionnaireId: 'q3', createdAt: '', updatedAt: '' },
-  { id: 'pr3', title: 'Peer Review for Carol White (Overdue)', type: 'peer', status: 'pending_submission', dueDate: '2024-07-01', reviewee: { id: 'u3', name: 'Carol White', email:'', role:'employee' }, questions: [], answers: [], questionnaireId: 'q3', createdAt: '', updatedAt: '' },
-];
+import { getUserDashboardDataAction } from './actions';
 
 // Note Structure
 interface PersonalNote {
@@ -233,7 +223,15 @@ const ReviewCard = ({ review }: { review: Review }) => {
       <CardFooter className="pt-3 border-t border-border/50 flex justify-end">
         {(review.status === 'draft' || review.status === 'pending_submission') && (
           <Button asChild size="sm" className="h-8 text-xs font-medium">
-            <Link href={review.type === 'self' ? `/reviews/self/${review.id}/edit` : `/reviews/peer/${review.id}`}>
+            <Link
+              href={
+                review.type === 'self'
+                  ? review.id.startsWith('self-task-')
+                    ? `/reviews/self/new?cycleId=${review.reviewCycleId}`
+                    : `/reviews/self/${review.id}/edit`
+                  : `/reviews/peer/${review.assignmentId || review.id}`
+              }
+            >
               {review.status === 'draft' ? <Edit3 className="mr-1.5 h-3.5 w-3.5" /> : <FileText className="mr-1.5 h-3.5 w-3.5" />}
               {review.status === 'draft' ? 'Continue Draft' : 'Start Review'}
             </Link>
@@ -251,10 +249,38 @@ const ReviewCard = ({ review }: { review: Review }) => {
 };
 
 export default function DashboardPage() {
-  const allReviews = [...mockSelfReviews, ...mockPeerReviewsAssigned];
-  const pendingCount = allReviews.filter(r => r.status === 'draft' || r.status === 'pending_submission').length;
-  const completedCount = allReviews.filter(r => r.status === 'submitted' || r.status === 'completed').length;
-  const overdueCount = allReviews.filter(r => r.dueDate && new Date(r.dueDate) < new Date() && r.status !== 'completed' && r.status !== 'submitted').length;
+  const [isLoading, setIsLoading] = useState(true);
+  const [selfReviews, setSelfReviews] = useState<Review[]>([]);
+  const [peerReviews, setPeerReviews] = useState<Review[]>([]);
+  const [stats, setStats] = useState({
+    pendingCount: 0,
+    completedCount: 0,
+    overdueCount: 0,
+    completionRate: 0,
+  });
+
+  const fetchDashboardData = async () => {
+    try {
+      setIsLoading(true);
+      const data = await getUserDashboardDataAction();
+      setSelfReviews(data.selfReviews);
+      setPeerReviews(data.peerReviews);
+      setStats({
+        pendingCount: data.pendingCount,
+        completedCount: data.completedCount,
+        overdueCount: data.overdueCount,
+        completionRate: data.completionRate,
+      });
+    } catch (err) {
+      console.error('Failed to load dashboard data:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchDashboardData();
+  }, []);
 
   // Notes state
   const [notes, setNotes] = useState<PersonalNote[]>(initialNotes);
@@ -315,7 +341,7 @@ export default function DashboardPage() {
             <Clock className="h-4 w-4 text-amber-500" />
           </div>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-foreground">{pendingCount}</span>
+            <span className="text-2xl font-bold text-foreground">{stats.pendingCount}</span>
             <span className="text-xs text-muted-foreground">reviews</span>
           </div>
         </Card>
@@ -326,7 +352,7 @@ export default function DashboardPage() {
             <CheckCircle className="h-4 w-4 text-emerald-500" />
           </div>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-foreground">{completedCount}</span>
+            <span className="text-2xl font-bold text-foreground">{stats.completedCount}</span>
             <span className="text-xs text-muted-foreground">submitted</span>
           </div>
         </Card>
@@ -337,8 +363,8 @@ export default function DashboardPage() {
             <AlertTriangle className="h-4 w-4 text-rose-500" />
           </div>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className={`text-2xl font-bold ${overdueCount > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-foreground'}`}>
-              {overdueCount}
+            <span className={`text-2xl font-bold ${stats.overdueCount > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-foreground'}`}>
+              {stats.overdueCount}
             </span>
             <span className="text-xs text-muted-foreground">needs attention</span>
           </div>
@@ -351,7 +377,7 @@ export default function DashboardPage() {
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-2xl font-bold text-foreground">
-              {allReviews.length > 0 ? Math.round((completedCount / allReviews.length) * 100) : 0}%
+              {stats.completionRate}%
             </span>
             <span className="text-xs text-muted-foreground">overall</span>
           </div>
@@ -362,10 +388,10 @@ export default function DashboardPage() {
       <Tabs defaultValue="self-reviews" className="w-full space-y-4">
         <TabsList className="bg-muted p-1 rounded-lg border border-border/50 flex flex-wrap sm:inline-flex w-full sm:w-auto h-auto gap-1">
           <TabsTrigger value="self-reviews" className="text-xs px-3 py-1.5 font-medium data-[state=active]:bg-card data-[state=active]:shadow-sm">
-            <FileText className="mr-1.5 h-3.5 w-3.5" /> My Self-Reviews ({mockSelfReviews.length})
+            <FileText className="mr-1.5 h-3.5 w-3.5" /> My Self-Reviews ({selfReviews.length})
           </TabsTrigger>
           <TabsTrigger value="peer-reviews" className="text-xs px-3 py-1.5 font-medium data-[state=active]:bg-card data-[state=active]:shadow-sm">
-            <Users className="mr-1.5 h-3.5 w-3.5" /> Peer Reviews Assigned ({mockPeerReviewsAssigned.length})
+            <Users className="mr-1.5 h-3.5 w-3.5" /> Peer Reviews Assigned ({peerReviews.length})
           </TabsTrigger>
           <TabsTrigger value="my-notes" className="text-xs px-3 py-1.5 font-medium data-[state=active]:bg-card data-[state=active]:shadow-sm">
             <NotebookPen className="mr-1.5 h-3.5 w-3.5" /> My Notes ({notes.length})
@@ -377,9 +403,13 @@ export default function DashboardPage() {
 
         {/* TAB 1: Self-Reviews */}
         <TabsContent value="self-reviews" className="mt-4">
-          {mockSelfReviews.length > 0 ? (
+          {isLoading ? (
+            <div className="flex justify-center items-center py-12">
+              <Loader2 className="h-6 w-6 animate-spin text-primary" />
+            </div>
+          ) : selfReviews.length > 0 ? (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {mockSelfReviews.map((review) => (
+              {selfReviews.map((review) => (
                 <ReviewCard key={review.id} review={review} />
               ))}
             </div>
@@ -399,9 +429,13 @@ export default function DashboardPage() {
 
         {/* TAB 2: Peer Reviews Assigned */}
         <TabsContent value="peer-reviews" className="mt-4">
-          {mockPeerReviewsAssigned.length > 0 ? (
+          {isLoading ? (
+            <div className="flex justify-center items-center py-12">
+              <Loader2 className="h-6 w-6 animate-spin text-primary" />
+            </div>
+          ) : peerReviews.length > 0 ? (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {mockPeerReviewsAssigned.map((review) => (
+              {peerReviews.map((review) => (
                 <ReviewCard key={review.id} review={review} />
               ))}
             </div>

@@ -1,43 +1,18 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
-import { BarChart3, MessageSquare, ThumbsUp, ThumbsDown, AlertTriangle, Eye, Users, ArrowRight, Search, CheckCircle2, Clock, ShieldAlert } from 'lucide-react';
-import type { TeamMemberFeedback } from '@/types';
+import { BarChart3, MessageSquare, ThumbsUp, ThumbsDown, AlertTriangle, Eye, Users, Search, CheckCircle2, Clock, ShieldAlert, Loader2 } from 'lucide-react';
+import type { TeamMemberFeedback, User } from '@/types';
 import Link from 'next/link';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-
-// Mock Data
-const mockTeamMembers: TeamMemberFeedback[] = [
-  {
-    id: 'tm1', name: 'Alice Wonderland', avatarUrl: 'https://placehold.co/100x100.png?text=AW',
-    selfReviewStatus: 'submitted', peerReviewsAssignedCount: 5, peerReviewsCompletedCount: 4,
-    feedbackSummary: 'Alice consistently delivers high-quality work and is a great team player. Could focus more on strategic thinking.',
-    sentiment: 'positive', keyImprovementAreas: ['Strategic Thinking', 'Public Speaking']
-  },
-  {
-    id: 'tm2', name: 'Bob The Builder', avatarUrl: 'https://placehold.co/100x100.png?text=BB',
-    selfReviewStatus: 'draft', peerReviewsAssignedCount: 4, peerReviewsCompletedCount: 1,
-    feedbackSummary: 'Bob shows strong technical skills but needs to improve communication with non-technical team members.',
-    sentiment: 'mixed', keyImprovementAreas: ['Communication', 'Time Management']
-  },
-  {
-    id: 'tm3', name: 'Charlie Brown', avatarUrl: 'https://placehold.co/100x100.png?text=CB',
-    selfReviewStatus: 'not_started', peerReviewsAssignedCount: 3, peerReviewsCompletedCount: 0,
-    sentiment: undefined, // No AI data yet
-  },
-  {
-    id: 'tm4', name: 'Diana Prince', avatarUrl: 'https://placehold.co/100x100.png?text=DP',
-    selfReviewStatus: 'submitted', peerReviewsAssignedCount: 5, peerReviewsCompletedCount: 5,
-    feedbackSummary: 'Diana is an exceptional leader and consistently exceeds expectations. No major areas for improvement noted.',
-    sentiment: 'positive', keyImprovementAreas: []
-  },
-];
+import { getTeamDashboardDataAction, type TeamDashboardData } from './actions';
+import { useToast } from '@/hooks/use-toast';
 
 const SentimentDisplay = ({ sentiment }: { sentiment?: 'positive' | 'neutral' | 'negative' | 'mixed' }) => {
   if (!sentiment) return <span className="text-xs text-muted-foreground">Pending Data</span>;
@@ -72,7 +47,7 @@ const getSelfReviewBadge = (status: TeamMemberFeedback['selfReviewStatus']) => {
 
 const TeamMemberCard = ({ member }: { member: TeamMemberFeedback }) => {
   const peerReviewProgress = member.peerReviewsAssignedCount > 0 ? (member.peerReviewsCompletedCount / member.peerReviewsAssignedCount) * 100 : 0;
-  const isAtRisk = member.selfReviewStatus === 'not_started' || peerReviewProgress < 50;
+  const isAtRisk = member.selfReviewStatus === 'not_started' || (member.peerReviewsAssignedCount > 0 && peerReviewProgress < 50);
 
   return (
     <Card className="border border-border bg-card shadow-sm hover:border-border/80 hover:shadow transition-all flex flex-col justify-between">
@@ -142,16 +117,41 @@ const TeamMemberCard = ({ member }: { member: TeamMemberFeedback }) => {
 };
 
 export default function TeamDashboardPage() {
+  const [data, setData] = useState<TeamDashboardData | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
+  const { toast } = useToast();
 
-  const totalMembers = mockTeamMembers.length;
-  const submittedCount = mockTeamMembers.filter(m => m.selfReviewStatus === 'submitted').length;
-  const atRiskCount = mockTeamMembers.filter(m => m.selfReviewStatus === 'not_started' || (m.peerReviewsAssignedCount > 0 && (m.peerReviewsCompletedCount / m.peerReviewsAssignedCount) < 0.5)).length;
-  const totalAssignedPeer = mockTeamMembers.reduce((acc, m) => acc + m.peerReviewsAssignedCount, 0);
-  const totalCompletedPeer = mockTeamMembers.reduce((acc, m) => acc + m.peerReviewsCompletedCount, 0);
+  const fetchTeamData = async () => {
+    try {
+      setIsLoading(true);
+      const res = await getTeamDashboardDataAction();
+      setData(res);
+    } catch (error) {
+      console.error('Failed to load team dashboard data:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error loading team data',
+        description: 'Could not fetch the latest review status for your team.',
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-  const filteredMembers = mockTeamMembers.filter(member => {
+  useEffect(() => {
+    fetchTeamData();
+  }, []);
+
+  const members = data?.members || [];
+  const totalMembers = data?.totalMembers || 0;
+  const submittedCount = data?.submittedCount || 0;
+  const atRiskCount = data?.atRiskCount || 0;
+  const totalAssignedPeer = data?.totalAssignedPeer || 0;
+  const totalCompletedPeer = data?.totalCompletedPeer || 0;
+
+  const filteredMembers = members.filter(member => {
     const nameMatch = member.name.toLowerCase().includes(searchTerm.toLowerCase());
     const statusMatch = filterStatus === 'all' || 
                         (filterStatus === 'at_risk' && (member.selfReviewStatus === 'not_started' || (member.peerReviewsAssignedCount > 0 && (member.peerReviewsCompletedCount / member.peerReviewsAssignedCount) < 0.5))) ||
@@ -166,110 +166,139 @@ export default function TeamDashboardPage() {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-2 border-b border-border">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground font-headline">Team Dashboard</h1>
-          <p className="text-xs text-muted-foreground">Monitor performance review participation and sentiment across your team</p>
+          <p className="text-xs text-muted-foreground">
+            {data?.isDirectReportsOnly ? 'Monitor performance review participation and sentiment across your direct reports' : 'Monitor performance review participation and sentiment across your organization'}
+          </p>
         </div>
-        <Button size="sm" className="h-9 font-medium shadow-sm">
-          <Users className="mr-1.5 h-4 w-4" /> Manage Team Reviews
-        </Button>
+        {data?.userRole === 'admin' && (
+          <Button size="sm" className="h-9 font-medium shadow-sm" asChild>
+            <Link href="/admin/assignments">
+              <Users className="mr-1.5 h-4 w-4" /> Manage Team Reviews
+            </Link>
+          </Button>
+        )}
       </div>
 
-      {/* KPI Metrics */}
-      <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
-        <Card className="p-4 border border-border bg-card shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground">Direct Reports</span>
-            <Users className="h-4 w-4 text-primary" />
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-foreground">{totalMembers}</span>
-            <span className="text-xs text-muted-foreground">members</span>
-          </div>
-        </Card>
-
-        <Card className="p-4 border border-border bg-card shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground">Self-Reviews Completed</span>
-            <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-foreground">{submittedCount}/{totalMembers}</span>
-            <span className="text-xs text-muted-foreground">({Math.round((submittedCount/totalMembers)*100)}%)</span>
-          </div>
-        </Card>
-
-        <Card className="p-4 border border-border bg-card shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground">Peer Reviews Filled</span>
-            <BarChart3 className="h-4 w-4 text-blue-500" />
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-foreground">{totalCompletedPeer}/{totalAssignedPeer}</span>
-            <span className="text-xs text-muted-foreground">({Math.round((totalCompletedPeer/totalAssignedPeer)*100)}%)</span>
-          </div>
-        </Card>
-
-        <Card className="p-4 border border-border bg-card shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground">Attention Needed</span>
-            <ShieldAlert className="h-4 w-4 text-rose-500" />
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className={`text-2xl font-bold ${atRiskCount > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-foreground'}`}>
-              {atRiskCount}
-            </span>
-            <span className="text-xs text-muted-foreground">at-risk</span>
-          </div>
-        </Card>
-      </div>
-
-      {/* Main Team Member List Card */}
-      <Card className="border border-border bg-card shadow-sm">
-        <CardHeader className="pb-3 border-b border-border/50">
-          <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
-            <div>
-              <CardTitle className="text-base font-semibold font-headline">Team Members Progress</CardTitle>
-              <CardDescription className="text-xs">Detailed view of review status and automated feedback insights</CardDescription>
-            </div>
-            <div className="flex flex-col sm:flex-row gap-2.5">
-              <div className="relative">
-                <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-                <Input 
-                  placeholder="Search team member..." 
-                  value={searchTerm} 
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-8 h-9 text-xs w-full sm:w-[200px]"
-                />
+      {isLoading ? (
+        <div className="flex flex-col items-center justify-center py-20">
+          <Loader2 className="h-8 w-8 animate-spin text-primary mb-3" />
+          <p className="text-xs text-muted-foreground">Loading team review metrics...</p>
+        </div>
+      ) : (
+        <>
+          {/* KPI Metrics */}
+          <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+            <Card className="p-4 border border-border bg-card shadow-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-muted-foreground">
+                  {data?.isDirectReportsOnly ? 'Direct Reports' : 'Team Members'}
+                </span>
+                <Users className="h-4 w-4 text-primary" />
               </div>
-              <Select value={filterStatus} onValueChange={setFilterStatus}>
-                <SelectTrigger className="w-full sm:w-[170px] h-9 text-xs">
-                  <SelectValue placeholder="Filter by status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all" className="text-xs">All Members ({mockTeamMembers.length})</SelectItem>
-                  <SelectItem value="at_risk" className="text-xs">At Risk ({atRiskCount})</SelectItem>
-                  <SelectItem value="submitted" className="text-xs">Submitted Self-Review ({submittedCount})</SelectItem>
-                  <SelectItem value="pending" className="text-xs">Pending Self-Review ({totalMembers - submittedCount})</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+              <div className="mt-2 flex items-baseline gap-2">
+                <span className="text-2xl font-bold text-foreground">{totalMembers}</span>
+                <span className="text-xs text-muted-foreground">members</span>
+              </div>
+            </Card>
+
+            <Card className="p-4 border border-border bg-card shadow-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-muted-foreground">Self-Reviews Completed</span>
+                <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+              </div>
+              <div className="mt-2 flex items-baseline gap-2">
+                <span className="text-2xl font-bold text-foreground">{submittedCount}/{totalMembers}</span>
+                <span className="text-xs text-muted-foreground">
+                  ({totalMembers > 0 ? Math.round((submittedCount / totalMembers) * 100) : 0}%)
+                </span>
+              </div>
+            </Card>
+
+            <Card className="p-4 border border-border bg-card shadow-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-muted-foreground">Peer Reviews Filled</span>
+                <BarChart3 className="h-4 w-4 text-blue-500" />
+              </div>
+              <div className="mt-2 flex items-baseline gap-2">
+                <span className="text-2xl font-bold text-foreground">{totalCompletedPeer}/{totalAssignedPeer}</span>
+                <span className="text-xs text-muted-foreground">
+                  ({totalAssignedPeer > 0 ? Math.round((totalCompletedPeer / totalAssignedPeer) * 100) : 0}%)
+                </span>
+              </div>
+            </Card>
+
+            <Card className="p-4 border border-border bg-card shadow-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-muted-foreground">Attention Needed</span>
+                <ShieldAlert className="h-4 w-4 text-rose-500" />
+              </div>
+              <div className="mt-2 flex items-baseline gap-2">
+                <span className={`text-2xl font-bold ${atRiskCount > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-foreground'}`}>
+                  {atRiskCount}
+                </span>
+                <span className="text-xs text-muted-foreground">at-risk</span>
+              </div>
+            </Card>
           </div>
-        </CardHeader>
-        <CardContent className="p-4 sm:p-6">
-          {filteredMembers.length > 0 ? (
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {filteredMembers.map((member) => (
-                <TeamMemberCard key={member.id} member={member} />
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-12">
-              <Users className="mx-auto h-10 w-10 text-muted-foreground mb-3" />
-              <h3 className="text-sm font-semibold text-foreground">No team members match your filter</h3>
-              <p className="text-xs text-muted-foreground mt-1">Try changing the search query or status filter.</p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+
+          {/* Main Team Member List Card */}
+          <Card className="border border-border bg-card shadow-sm">
+            <CardHeader className="pb-3 border-b border-border/50">
+              <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+                <div>
+                  <CardTitle className="text-base font-semibold font-headline">Team Members Progress</CardTitle>
+                  <CardDescription className="text-xs">Detailed view of review status and automated feedback insights</CardDescription>
+                </div>
+                <div className="flex flex-col sm:flex-row gap-2.5">
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                    <Input 
+                      placeholder="Search team member..." 
+                      value={searchTerm} 
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="pl-8 h-9 text-xs w-full sm:w-[200px]"
+                    />
+                  </div>
+                  <Select value={filterStatus} onValueChange={setFilterStatus}>
+                    <SelectTrigger className="w-full sm:w-[170px] h-9 text-xs">
+                      <SelectValue placeholder="Filter by status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all" className="text-xs">All Members ({members.length})</SelectItem>
+                      <SelectItem value="at_risk" className="text-xs">At Risk ({atRiskCount})</SelectItem>
+                      <SelectItem value="submitted" className="text-xs">Submitted Self-Review ({submittedCount})</SelectItem>
+                      <SelectItem value="pending" className="text-xs">Pending Self-Review ({totalMembers - submittedCount})</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-4 sm:p-6">
+              {filteredMembers.length > 0 ? (
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                  {filteredMembers.map((member) => (
+                    <TeamMemberCard key={member.id} member={member} />
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-12">
+                  <Users className="mx-auto h-10 w-10 text-muted-foreground mb-3" />
+                  <h3 className="text-sm font-semibold text-foreground">
+                    {members.length === 0 ? "No team members found" : "No team members match your filter"}
+                  </h3>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {members.length === 0 
+                      ? (data?.isDirectReportsOnly 
+                          ? "No direct reports are assigned to you yet in Manage Staff." 
+                          : "No staff members found in the directory.")
+                      : "Try changing the search query or status filter."}
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </>
+      )}
     </div>
   );
 }

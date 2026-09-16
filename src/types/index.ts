@@ -5,7 +5,9 @@ export interface User {
   email: string;
   avatarUrl?: string;
   role: 'employee' | 'team_leader' | 'admin';
+  mentorId?: string | null;
 }
+
 
 export interface Question {
   id: string;

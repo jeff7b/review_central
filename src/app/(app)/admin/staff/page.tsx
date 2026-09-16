@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
@@ -26,18 +26,31 @@ import { Badge } from '@/components/ui/badge';
 
 const UserForm = ({ 
   user, 
+  users,
   onSave, 
   onCancel,
   isSaving
 }: { 
   user?: Partial<User>, 
+  users: User[],
   onSave: (data: Partial<User>) => void, 
   onCancel: () => void,
   isSaving: boolean
 }) => {
   const [formData, setFormData] = useState<Partial<User>>(
-    user ? { ...user } : { name: '', email: '', role: 'employee' }
+    user ? { ...user } : { name: '', email: '', role: 'employee', mentorId: null }
   );
+
+  const eligibleMentors = useMemo(() => {
+    return users
+      .filter(u => !formData.id || u.id !== formData.id)
+      .sort((a, b) => {
+        const roleRank: Record<User['role'], number> = { admin: 1, team_leader: 2, employee: 3 };
+        const rankDiff = (roleRank[a.role] ?? 99) - (roleRank[b.role] ?? 99);
+        if (rankDiff !== 0) return rankDiff;
+        return a.name.localeCompare(b.name);
+      });
+  }, [users, formData.id]);
 
   const handleSave = () => {
     if(!formData.name || formData.name.trim() === '' || !formData.email || formData.email.trim() === '') {
@@ -48,7 +61,7 @@ const UserForm = ({
   };
 
   return (
-    <DialogContent className="sm:max-w-[425px]">
+    <DialogContent className="sm:max-w-[480px]">
       <DialogHeader>
         <DialogTitle>{formData.id ? 'Edit' : 'Add New'} Staff Member</DialogTitle>
       </DialogHeader>
@@ -63,7 +76,14 @@ const UserForm = ({
         </div>
         <div className="grid grid-cols-4 items-center gap-4">
           <Label htmlFor="role" className="text-right">Role</Label>
-          <Select value={formData.role} onValueChange={(value) => setFormData(p => ({...p, role: value as User['role']}))}>
+          <Select 
+            value={formData.role} 
+            onValueChange={(value) => setFormData(p => ({
+              ...p, 
+              role: value as User['role'],
+              ...(value === 'admin' ? { mentorId: null } : {})
+            }))}
+          >
             <SelectTrigger id="role" className="col-span-3">
               <SelectValue placeholder="Select a role" />
             </SelectTrigger>
@@ -74,6 +94,36 @@ const UserForm = ({
             </SelectContent>
           </Select>
         </div>
+        {formData.role !== 'admin' && (
+          <div className="grid grid-cols-4 items-center gap-4">
+            <Label htmlFor="mentor" className="text-right">Admin/Mentor</Label>
+            <Select 
+              value={formData.mentorId || 'none'} 
+              onValueChange={(value) => setFormData(p => ({...p, mentorId: value === 'none' ? null : value}))}
+            >
+              <SelectTrigger id="mentor" className="col-span-3">
+                <SelectValue placeholder="Select an Admin or Mentor" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">
+                  <span className="text-muted-foreground">None (Unassigned)</span>
+                </SelectItem>
+                {eligibleMentors.map((m) => (
+                  <SelectItem key={m.id} value={m.id}>
+                    <div className="flex items-center gap-2">
+                      <Avatar className="h-5 w-5">
+                        <AvatarImage src={m.avatarUrl} alt={m.name} />
+                        <AvatarFallback className="text-[10px]">{m.name.split(' ').map(n=>n[0]).join('')}</AvatarFallback>
+                      </Avatar>
+                      <span>{m.name}</span>
+                      <span className="text-xs text-muted-foreground capitalize">({m.role.replace('_', ' ')})</span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </div>
       <DialogFooter>
         <Button variant="outline" onClick={onCancel} disabled={isSaving}>Cancel</Button>
@@ -210,6 +260,7 @@ export default function AdminStaffPage() {
           {isFormOpen && (
             <UserForm 
               user={editingUser} 
+              users={users}
               onSave={handleSaveUser} 
               onCancel={closeForm} 
               isSaving={isSaving}
@@ -242,49 +293,71 @@ export default function AdminStaffPage() {
                   <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground pl-6">Name</TableHead>
                   <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Email</TableHead>
                   <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground text-center">Role</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Admin / Mentor</TableHead>
                   <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground text-right pr-6">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {users.map((user) => (
-                  <TableRow key={user.id} className="hover:bg-muted/20 transition-colors">
-                    <TableCell className="font-medium flex items-center pl-6">
-                      <Avatar className="h-8 w-8 mr-3 ring-1 ring-border">
-                        <AvatarImage src={user.avatarUrl} alt={user.name} />
-                        <AvatarFallback className="text-xs font-semibold">{user.name.split(' ').map(n=>n[0]).join('')}</AvatarFallback>
-                      </Avatar>
-                      <span className="text-sm font-medium text-foreground">{user.name}</span>
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{user.email}</TableCell>
-                    <TableCell className="text-center">
-                      {renderRoleBadge(user.role)}
-                    </TableCell>
-                    <TableCell className="text-right space-x-1 pr-6">
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" onClick={() => handleEdit(user)} title="Edit User">
-                        <Edit className="h-3.5 w-3.5" />
-                      </Button>
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" title="Delete User">
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Delete staff member?</AlertDialogTitle>
-                            <AlertDialogDescription className="text-xs text-muted-foreground">
-                              This will permanently revoke access for {user.name} and remove their data. This action cannot be reversed.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel className="text-xs">Cancel</AlertDialogCancel>
-                            <AlertDialogAction className="text-xs bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => handleDelete(user.id)}>Delete</AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {users.map((user) => {
+                  const mentor = user.mentorId ? users.find(u => u.id === user.mentorId) : null;
+                  return (
+                    <TableRow key={user.id} className="hover:bg-muted/20 transition-colors">
+                      <TableCell className="font-medium flex items-center pl-6">
+                        <Avatar className="h-8 w-8 mr-3 ring-1 ring-border">
+                          <AvatarImage src={user.avatarUrl} alt={user.name} />
+                          <AvatarFallback className="text-xs font-semibold">{user.name.split(' ').map(n=>n[0]).join('')}</AvatarFallback>
+                        </Avatar>
+                        <span className="text-sm font-medium text-foreground">{user.name}</span>
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{user.email}</TableCell>
+                      <TableCell className="text-center">
+                        {renderRoleBadge(user.role)}
+                      </TableCell>
+                      <TableCell>
+                        {user.role === 'admin' ? (
+                          <span className="text-xs text-muted-foreground italic">N/A</span>
+                        ) : mentor ? (
+                          <div className="flex items-center gap-2">
+                            <Avatar className="h-6 w-6 ring-1 ring-border">
+                              <AvatarImage src={mentor.avatarUrl} alt={mentor.name} />
+                              <AvatarFallback className="text-[10px] font-semibold">{mentor.name.split(' ').map(n=>n[0]).join('')}</AvatarFallback>
+                            </Avatar>
+                            <span className="text-sm font-medium text-foreground">{mentor.name}</span>
+                            {renderRoleBadge(mentor.role)}
+                          </div>
+                        ) : (
+                          <Badge variant="outline" className="text-xs font-normal border-dashed text-muted-foreground">
+                            Unassigned
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right space-x-1 pr-6">
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" onClick={() => handleEdit(user)} title="Edit User">
+                          <Edit className="h-3.5 w-3.5" />
+                        </Button>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" title="Delete User">
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Delete staff member?</AlertDialogTitle>
+                              <AlertDialogDescription className="text-xs text-muted-foreground">
+                                This will permanently revoke access for {user.name} and remove their data. This action cannot be reversed.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel className="text-xs">Cancel</AlertDialogCancel>
+                              <AlertDialogAction className="text-xs bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => handleDelete(user.id)}>Delete</AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           ) : (

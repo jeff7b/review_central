@@ -12,13 +12,17 @@ if (!admin.apps.length) {
         credential: admin.credential.cert(serviceAccount),
       });
     } catch (e) {
-      console.warn('Failed to parse FIREBASE_SERVICE_ACCOUNT_KEY_BASE64:', e);
+      console.error('Failed to parse FIREBASE_SERVICE_ACCOUNT_KEY_BASE64, falling back to default credentials:', e);
+      admin.initializeApp();
     }
   } else {
-    const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'review-central-demo';
-    admin.initializeApp({
-      projectId,
-    });
+    // In Firebase App Hosting, Cloud Run, or during Next.js build page collection,
+    // initialize using Application Default Credentials (ADC) instead of crashing the build.
+    try {
+      admin.initializeApp();
+    } catch (e) {
+      console.warn('Firebase Admin initialized without credentials (build/fallback):', e);
+    }
   }
 }
 

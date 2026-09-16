@@ -4,7 +4,7 @@
 import { adminDb } from '@/lib/firebase-admin';
 import { requireAdminSession } from '@/lib/auth';
 import type { PeerReviewAssignment, User } from '@/types';
-import { Timestamp } from 'firebase-admin/firestore';
+import { Timestamp, FieldValue } from 'firebase-admin/firestore';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
@@ -57,6 +57,7 @@ export async function saveAssignmentAction(
     status: validated.status,
     dueDate: validated.dueDate,
     updatedAt: now,
+    ...(validated.status === 'pending' ? { reviewId: FieldValue.delete() } : {}),
   };
 
   if (validated.id) {
@@ -120,3 +121,100 @@ export async function deleteAssignmentAction(assignmentId: string) {
     throw new Error('Failed to delete assignment.');
   }
 }
+
+/**
+ * Clears a submitted review for an assignment so it can be redone.
+ * Resets status to 'pending', deletes the reviewId reference, and removes any linked review document.
+ * @param assignmentId The ID of the assignment to clear.
+ */
+export async function clearSubmittedReviewAction(assignmentId: string) {
+  await requireAdminSession();
+  const validatedId = AssignmentIdSchema.parse(assignmentId);
+  try {
+    const assignmentRef = adminDb.collection('peer-review-assignments').doc(validatedId);
+    const assignmentDoc = await assignmentRef.get();
+
+    if (!assignmentDoc.exists) {
+      throw new Error('Assignment not found.');
+    }
+
+    const assignmentData = assignmentDoc.data();
+    const reviewId = assignmentData?.reviewId;
+
+    // Delete any linked review document from 'peer-reviews' and 'reviews'
+    if (reviewId) {
+      await adminDb.collection('peer-reviews').doc(reviewId).delete().catch(() => {});
+      await adminDb.collection('reviews').doc(reviewId).delete().catch(() => {});
+    }
+
+    // Also remove any review documents matching this assignmentId
+    const matchingPeerReviews = await adminDb.collection('peer-reviews')
+      .where('assignmentId', '==', validatedId)
+      .get()
+      .catch(() => null);
+    if (matchingPeerReviews && !matchingPeerReviews.empty) {
+      const batch = adminDb.batch();
+      matchingPeerReviews.docs.forEach((doc) => batch.delete(doc.ref));
+      await batch.commit().catch(() => {});
+    }
+
+    // Reset the assignment status to pending and remove reviewId
+    await assignmentRef.update({
+      status: 'pending',
+      reviewId: FieldValue.delete(),
+      updatedAt: Timestamp.now(),
+    });
+
+    revalidatePath('/admin/assignments');
+    return { success: true };
+  } catch (error) {
+    console.error('Error clearing submitted review:', error);
+    throw new Error('Failed to clear submitted review.');
+  }
+}
+
+/**
+ * Clears all submitted reviews for a given review cycle so they can be redone.
+ * Resets their status to 'pending' and deletes linked review documents.
+ * @param reviewCycleId The ID of the review cycle.
+ * @returns An object with success status and count of cleared reviews.
+ */
+export async function clearAllSubmittedReviewsAction(reviewCycleId: string): Promise<{ success: boolean; count: number }> {
+  await requireAdminSession();
+  const validatedCycleId = CycleIdSchema.parse(reviewCycleId);
+  try {
+    const snapshot = await adminDb.collection('peer-review-assignments')
+      .where('reviewCycleId', '==', validatedCycleId)
+      .where('status', '==', 'completed')
+      .get();
+
+    if (snapshot.empty) {
+      return { success: true, count: 0 };
+    }
+
+    const batch = adminDb.batch();
+    const now = Timestamp.now();
+
+    for (const doc of snapshot.docs) {
+      const data = doc.data();
+      const reviewId = data?.reviewId;
+      if (reviewId) {
+        await adminDb.collection('peer-reviews').doc(reviewId).delete().catch(() => {});
+        await adminDb.collection('reviews').doc(reviewId).delete().catch(() => {});
+      }
+      batch.update(doc.ref, {
+        status: 'pending',
+        reviewId: FieldValue.delete(),
+        updatedAt: now,
+      });
+    }
+
+    await batch.commit();
+    revalidatePath('/admin/assignments');
+    return { success: true, count: snapshot.size };
+  } catch (error) {
+    console.error(`Error clearing all submitted reviews for cycle ${reviewCycleId}:`, error);
+    throw new Error('Failed to clear submitted reviews.');
+  }
+}
+

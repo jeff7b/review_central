@@ -10,9 +10,10 @@ if (process.env.NODE_ENV === 'production' && process.env.NEXT_PUBLIC_STUB_AUTH =
 }
 
 const useStubAuth = process.env.NEXT_PUBLIC_STUB_AUTH === 'true';
+const isBuildPhase = process.env.NEXT_PHASE === 'phase-production-build';
 
-// Validate required env vars before the server starts
-if (!useStubAuth) {
+// Validate required env vars at runtime before the server starts (skip during build page data collection)
+if (!useStubAuth && !isBuildPhase) {
   const requiredVars = [
     'AUTH_SECRET',
     'AUTH_AZURE_AD_CLIENT_ID',
@@ -47,9 +48,9 @@ if (useStubAuth) {
 } else {
   providers.push(
     AzureADProvider({
-      clientId: process.env.AUTH_AZURE_AD_CLIENT_ID!,
-      clientSecret: process.env.AUTH_AZURE_AD_CLIENT_SECRET!,
-      tenantId: process.env.AUTH_AZURE_AD_TENANT_ID!,
+      clientId: process.env.AUTH_AZURE_AD_CLIENT_ID || (isBuildPhase ? 'build-time-placeholder' : ''),
+      clientSecret: process.env.AUTH_AZURE_AD_CLIENT_SECRET || (isBuildPhase ? 'build-time-placeholder' : ''),
+      tenantId: process.env.AUTH_AZURE_AD_TENANT_ID || (isBuildPhase ? 'build-time-placeholder' : ''),
     })
   );
 }
@@ -57,7 +58,7 @@ if (useStubAuth) {
 export const authOptions: NextAuthOptions = {
   providers,
   debug: process.env.NODE_ENV === 'development',
-  secret: process.env.NEXTAUTH_SECRET || process.env.AUTH_SECRET,
+  secret: process.env.AUTH_SECRET || (isBuildPhase ? 'build-time-placeholder' : undefined),
   ...(useStubAuth && { trustHost: true }),
   callbacks: {
     async jwt({ token, user, account, profile }) {

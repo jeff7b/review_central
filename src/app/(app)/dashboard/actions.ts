@@ -150,8 +150,8 @@ export async function getDashboardDataAction(): Promise<DashboardData> {
         const d = doc.data();
         notes.push({
           id: doc.id,
-          userId: d.userId,
-          title: d.title,
+          userId: d.userId || '',
+          title: d.title || '',
           content: d.content || '',
           category: d.category || 'achievement',
           date: d.date || new Date().toISOString().split('T')[0],
@@ -160,7 +160,7 @@ export async function getDashboardDataAction(): Promise<DashboardData> {
         });
       });
       // Sort notes by date descending
-      notes.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      notes.sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
     }
 
     // 4. Fetch feedback history (completed peer reviews where user is reviewee)

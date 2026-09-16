@@ -196,10 +196,12 @@ export default function DashboardPage() {
   const completedCount = allReviews.filter(r => r.status === 'submitted' || r.status === 'completed').length;
   const overdueCount = allReviews.filter(r => r.dueDate && new Date(r.dueDate) < new Date() && r.status !== 'completed' && r.status !== 'submitted').length;
 
-  const filteredNotes = notes.filter(n =>
-    n.title.toLowerCase().includes(noteSearch.toLowerCase()) ||
-    n.content.toLowerCase().includes(noteSearch.toLowerCase())
-  );
+  const filteredNotes = (notes || []).filter(n => {
+    const searchLower = (noteSearch || '').toLowerCase();
+    const titleMatch = (n?.title || '').toLowerCase().includes(searchLower);
+    const contentMatch = (n?.content || '').toLowerCase().includes(searchLower);
+    return titleMatch || contentMatch;
+  });
 
   const handleCreateNote = async (e: React.FormEvent) => {
     e.preventDefault();

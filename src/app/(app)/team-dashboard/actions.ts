@@ -2,7 +2,7 @@
 
 import { adminDb } from '@/lib/firebase-admin';
 import { getCurrentAppUser, requireLeaderOrAdminSession } from '@/lib/auth';
-import type { TeamMemberFeedback, User, Review, PeerReviewAssignment } from '@/types';
+import type { TeamMemberFeedback, User, Review, PeerReviewAssignment, ReviewCycle } from '@/types';
 import { Timestamp } from 'firebase-admin/firestore';
 
 function toISOString(val: unknown): string {
@@ -28,6 +28,8 @@ export interface TeamDashboardData {
   totalCompletedPeer: number;
   userRole: User['role'];
   isDirectReportsOnly: boolean;
+  reviewCycles: ReviewCycle[];
+  selectedCycleId: string;
 }
 
 export interface TeamMemberDetail {
@@ -43,15 +45,47 @@ export interface TeamMemberDetail {
 }
 
 /**
- * Fetches aggregated performance and review status across team members for the logged in leader/admin.
+ * Fetches aggregated performance and review status across team members for the logged in leader/admin,
+ * scoped to a specific Review Cycle.
  */
-export async function getTeamDashboardDataAction(): Promise<TeamDashboardData> {
+export async function getTeamDashboardDataAction(cycleId?: string): Promise<TeamDashboardData> {
   await requireLeaderOrAdminSession();
   const currentUser = await getCurrentAppUser();
   const isAdmin = currentUser.role === 'admin';
 
   try {
-    // 1. Fetch users from 'users' collection
+    // 1. Fetch all review cycles
+    const cyclesSnap = await adminDb.collection('review-cycles').get().catch(() => null);
+    let reviewCycles: ReviewCycle[] = [];
+
+    if (cyclesSnap && !cyclesSnap.empty) {
+      reviewCycles = cyclesSnap.docs.map(doc => {
+        const d = doc.data();
+        return {
+          id: doc.id,
+          name: d.name || 'Untitled Cycle',
+          status: d.status || 'draft',
+          startDate: toISOString(d.startDate),
+          endDate: toISOString(d.endDate),
+          participantIds: Array.isArray(d.participantIds) ? d.participantIds : [],
+          createdAt: toISOString(d.createdAt),
+          updatedAt: toISOString(d.updatedAt),
+        } as ReviewCycle;
+      });
+      // Sort by startDate desc
+      reviewCycles.sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
+    }
+
+    // Determine selected cycle:
+    let selectedCycleId = cycleId || '';
+    if (!selectedCycleId || !reviewCycles.some(c => c.id === selectedCycleId)) {
+      const active = reviewCycles.find(c => c.status === 'active');
+      selectedCycleId = active ? active.id : (reviewCycles[0]?.id || '');
+    }
+
+    const selectedCycle = reviewCycles.find(c => c.id === selectedCycleId);
+
+    // 2. Fetch users from 'users' collection
     const usersSnap = await adminDb.collection('users').orderBy('name').get();
     let allUsers: User[] = [];
 
@@ -62,28 +96,28 @@ export async function getTeamDashboardDataAction(): Promise<TeamDashboardData> {
       })) as User[];
     }
 
-    // Determine team scope:
-    // If admin: all users (excluding current admin user if multiple users exist, or all staff)
-    // If team_leader: users who have mentorId == currentUser.id (or all users if no mentor assignments exist yet)
+    // Determine team scope based on user role:
     let teamUsers: User[] = [];
     let isDirectReportsOnly = false;
 
     if (isAdmin) {
-      // Admins see all staff members
       teamUsers = allUsers.filter(u => u.id !== currentUser.id);
       if (teamUsers.length === 0 && allUsers.length > 0) {
-        teamUsers = allUsers; // If only current user is in DB
+        teamUsers = allUsers;
       }
     } else {
-      // Team leader: direct reports where mentorId matches
       const mentees = allUsers.filter(u => u.mentorId === currentUser.id);
       if (mentees.length > 0) {
         teamUsers = mentees;
         isDirectReportsOnly = true;
       } else {
-        // Fallback: non-admin users so the team leader doesn't see an empty screen if mentorId wasn't set yet
         teamUsers = allUsers.filter(u => u.id !== currentUser.id && u.role !== 'admin');
       }
+    }
+
+    // If a cycle is selected and has participantIds defined, limit team members to cycle participants
+    if (selectedCycle && selectedCycle.participantIds && selectedCycle.participantIds.length > 0) {
+      teamUsers = teamUsers.filter(u => selectedCycle.participantIds.includes(u.id));
     }
 
     if (teamUsers.length === 0) {
@@ -96,10 +130,12 @@ export async function getTeamDashboardDataAction(): Promise<TeamDashboardData> {
         totalCompletedPeer: 0,
         userRole: currentUser.role,
         isDirectReportsOnly,
+        reviewCycles,
+        selectedCycleId,
       };
     }
 
-    // 2. Fetch all self-reviews
+    // 3. Fetch self-reviews for the selected cycle (or all if no cycle selected)
     const selfReviewsSnap = await adminDb.collection('reviews')
       .where('type', '==', 'self')
       .get()
@@ -111,21 +147,29 @@ export async function getTeamDashboardDataAction(): Promise<TeamDashboardData> {
         const d = doc.data();
         const memberId = d.revieweeId || d.userId;
         if (memberId) {
-          const currentStatus = selfReviewsByMember.get(memberId);
-          // prioritize submitted/completed over draft
-          if (d.status === 'submitted' || d.status === 'completed') {
-            selfReviewsByMember.set(memberId, 'submitted');
-          } else if (d.status === 'draft' && currentStatus !== 'submitted') {
-            selfReviewsByMember.set(memberId, 'draft');
+          // Check cycle match if cycle is selected
+          const cycleMatches = !selectedCycle || 
+            d.reviewCycleId === selectedCycle.id || 
+            (d.title && selectedCycle.name && d.title.includes(selectedCycle.name));
+
+          if (cycleMatches) {
+            const currentStatus = selfReviewsByMember.get(memberId);
+            if (d.status === 'submitted' || d.status === 'completed') {
+              selfReviewsByMember.set(memberId, 'submitted');
+            } else if (d.status === 'draft' && currentStatus !== 'submitted') {
+              selfReviewsByMember.set(memberId, 'draft');
+            }
           }
         }
       });
     }
 
-    // 3. Fetch all peer-review-assignments
-    const assignmentsSnap = await adminDb.collection('peer-review-assignments')
-      .get()
-      .catch(() => null);
+    // 4. Fetch peer-review-assignments for the selected cycle
+    let assignmentsQuery = adminDb.collection('peer-review-assignments') as FirebaseFirestore.Query;
+    if (selectedCycleId) {
+      assignmentsQuery = assignmentsQuery.where('reviewCycleId', '==', selectedCycleId);
+    }
+    const assignmentsSnap = await assignmentsQuery.get().catch(() => null);
 
     const assignedByReviewer = new Map<string, { total: number; completed: number }>();
     if (assignmentsSnap && !assignmentsSnap.empty) {
@@ -142,10 +186,12 @@ export async function getTeamDashboardDataAction(): Promise<TeamDashboardData> {
       });
     }
 
-    // 4. Fetch any saved insights or AI evaluations
-    const insightsSnap = await adminDb.collection('team-insights')
-      .get()
-      .catch(() => null);
+    // 5. Fetch any saved insights or AI evaluations
+    let insightsQuery = adminDb.collection('team-insights') as FirebaseFirestore.Query;
+    if (selectedCycleId) {
+      insightsQuery = insightsQuery.where('reviewCycleId', '==', selectedCycleId);
+    }
+    const insightsSnap = await insightsQuery.get().catch(() => null);
 
     const insightsByMember = new Map<string, { summary?: string; sentiment?: any; improvementAreas?: string[] }>();
     if (insightsSnap && !insightsSnap.empty) {
@@ -161,7 +207,7 @@ export async function getTeamDashboardDataAction(): Promise<TeamDashboardData> {
       });
     }
 
-    // 5. Build TeamMemberFeedback objects
+    // 6. Build TeamMemberFeedback objects
     let totalAssignedPeer = 0;
     let totalCompletedPeer = 0;
     let submittedCount = 0;
@@ -185,11 +231,11 @@ export async function getTeamDashboardDataAction(): Promise<TeamDashboardData> {
         atRiskCount += 1;
       }
 
-      const initials = user.name.split(' ').map(n => n[0]).join('').toUpperCase();
+      const initials = (user.name || 'User').split(' ').filter(Boolean).map(n => n[0]).join('').toUpperCase();
 
       return {
         id: user.id,
-        name: user.name,
+        name: user.name || 'User',
         avatarUrl: user.avatarUrl || `https://placehold.co/100x100.png?text=${initials}`,
         selfReviewStatus: selfStatus as TeamMemberFeedback['selfReviewStatus'],
         peerReviewsAssignedCount: peerStats.total,
@@ -209,6 +255,8 @@ export async function getTeamDashboardDataAction(): Promise<TeamDashboardData> {
       totalCompletedPeer,
       userRole: currentUser.role,
       isDirectReportsOnly,
+      reviewCycles,
+      selectedCycleId,
     };
   } catch (error) {
     console.error('Error fetching team dashboard data:', error);
@@ -221,6 +269,8 @@ export async function getTeamDashboardDataAction(): Promise<TeamDashboardData> {
       totalCompletedPeer: 0,
       userRole: currentUser.role,
       isDirectReportsOnly: false,
+      reviewCycles: [],
+      selectedCycleId: '',
     };
   }
 }
@@ -228,7 +278,7 @@ export async function getTeamDashboardDataAction(): Promise<TeamDashboardData> {
 /**
  * Fetches detailed review information for a specific team member.
  */
-export async function getTeamMemberDetailAction(memberId: string): Promise<TeamMemberDetail | null> {
+export async function getTeamMemberDetailAction(memberId: string, cycleId?: string): Promise<TeamMemberDetail | null> {
   await requireLeaderOrAdminSession();
 
   try {
@@ -239,12 +289,15 @@ export async function getTeamMemberDetailAction(memberId: string): Promise<TeamM
     const member = { id: userDoc.id, ...userDoc.data() } as User;
 
     // Fetch member's self-review
-    const selfReviewSnap = await adminDb.collection('reviews')
+    let selfReviewQuery = adminDb.collection('reviews')
       .where('type', '==', 'self')
-      .where('revieweeId', '==', memberId)
-      .limit(1)
-      .get()
-      .catch(() => null);
+      .where('revieweeId', '==', memberId);
+
+    if (cycleId) {
+      selfReviewQuery = selfReviewQuery.where('reviewCycleId', '==', cycleId);
+    }
+
+    const selfReviewSnap = await selfReviewQuery.limit(1).get().catch(() => null);
 
     let selfReview: Review | undefined = undefined;
     if (selfReviewSnap && !selfReviewSnap.empty) {
@@ -264,10 +317,14 @@ export async function getTeamMemberDetailAction(memberId: string): Promise<TeamM
     }
 
     // Fetch peer reviews assigned to this member
-    const peerAssignedSnap = await adminDb.collection('peer-review-assignments')
-      .where('reviewerId', '==', memberId)
-      .get()
-      .catch(() => null);
+    let peerAssignedQuery = adminDb.collection('peer-review-assignments')
+      .where('reviewerId', '==', memberId);
+
+    if (cycleId) {
+      peerAssignedQuery = peerAssignedQuery.where('reviewCycleId', '==', cycleId);
+    }
+
+    const peerAssignedSnap = await peerAssignedQuery.get().catch(() => null);
 
     const peerReviewsAssigned: PeerReviewAssignment[] = [];
     if (peerAssignedSnap && !peerAssignedSnap.empty) {
@@ -293,10 +350,14 @@ export async function getTeamMemberDetailAction(memberId: string): Promise<TeamM
     }
 
     // Fetch peer reviews received for this member
-    const peerReceivedSnap = await adminDb.collection('peer-review-assignments')
-      .where('revieweeId', '==', memberId)
-      .get()
-      .catch(() => null);
+    let peerReceivedQuery = adminDb.collection('peer-review-assignments')
+      .where('revieweeId', '==', memberId);
+
+    if (cycleId) {
+      peerReceivedQuery = peerReceivedQuery.where('reviewCycleId', '==', cycleId);
+    }
+
+    const peerReceivedSnap = await peerReceivedQuery.get().catch(() => null);
 
     const peerReviewsReceived: TeamMemberDetail['peerReviewsReceived'] = [];
     if (peerReceivedSnap && !peerReceivedSnap.empty) {

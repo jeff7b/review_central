@@ -6,8 +6,8 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
-import { BarChart3, MessageSquare, ThumbsUp, ThumbsDown, AlertTriangle, Eye, Users, Search, CheckCircle2, Clock, ShieldAlert, Loader2 } from 'lucide-react';
-import type { TeamMemberFeedback, User } from '@/types';
+import { BarChart3, MessageSquare, ThumbsUp, ThumbsDown, AlertTriangle, Eye, Users, Search, CheckCircle2, Clock, ShieldAlert, Loader2, CalendarClock } from 'lucide-react';
+import type { TeamMemberFeedback, ReviewCycle } from '@/types';
 import Link from 'next/link';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -45,9 +45,11 @@ const getSelfReviewBadge = (status: TeamMemberFeedback['selfReviewStatus']) => {
   }
 };
 
-const TeamMemberCard = ({ member }: { member: TeamMemberFeedback }) => {
+const TeamMemberCard = ({ member, cycleId }: { member: TeamMemberFeedback; cycleId?: string }) => {
   const peerReviewProgress = member.peerReviewsAssignedCount > 0 ? (member.peerReviewsCompletedCount / member.peerReviewsAssignedCount) * 100 : 0;
   const isAtRisk = member.selfReviewStatus === 'not_started' || (member.peerReviewsAssignedCount > 0 && peerReviewProgress < 50);
+
+  const profileHref = cycleId ? `/team-dashboard/member/${member.id}?cycleId=${cycleId}` : `/team-dashboard/member/${member.id}`;
 
   return (
     <Card className="border border-border bg-card shadow-sm hover:border-border/80 hover:shadow transition-all flex flex-col justify-between">
@@ -55,7 +57,7 @@ const TeamMemberCard = ({ member }: { member: TeamMemberFeedback }) => {
         <div className="flex items-center space-x-3">
           <Avatar className="h-10 w-10 ring-1 ring-border">
             <AvatarImage src={member.avatarUrl} alt={member.name} data-ai-hint="employee avatar" />
-            <AvatarFallback className="text-xs font-semibold">{member.name.split(' ').map(n => n[0]).join('')}</AvatarFallback>
+            <AvatarFallback className="text-xs font-semibold">{member.name.split(' ').filter(Boolean).map(n => n[0]).join('')}</AvatarFallback>
           </Avatar>
           <div className="space-y-0.5">
             <CardTitle className="text-sm font-semibold font-headline">{member.name}</CardTitle>
@@ -107,7 +109,7 @@ const TeamMemberCard = ({ member }: { member: TeamMemberFeedback }) => {
 
       <CardFooter className="pt-2 border-t border-border/50">
         <Button variant="outline" size="sm" className="w-full text-xs font-medium h-8" asChild>
-          <Link href={`/team-dashboard/member/${member.id}`}>
+          <Link href={profileHref}>
             <Eye className="mr-1.5 h-3.5 w-3.5" /> View Full Profile
           </Link>
         </Button>
@@ -118,16 +120,18 @@ const TeamMemberCard = ({ member }: { member: TeamMemberFeedback }) => {
 
 export default function TeamDashboardPage() {
   const [data, setData] = useState<TeamDashboardData | null>(null);
+  const [selectedCycleId, setSelectedCycleId] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const { toast } = useToast();
 
-  const fetchTeamData = async () => {
+  const fetchTeamData = async (cycleId?: string) => {
     try {
       setIsLoading(true);
-      const res = await getTeamDashboardDataAction();
+      const res = await getTeamDashboardDataAction(cycleId);
       setData(res);
+      setSelectedCycleId(res.selectedCycleId);
     } catch (error) {
       console.error('Failed to load team dashboard data:', error);
       toast({
@@ -144,7 +148,14 @@ export default function TeamDashboardPage() {
     fetchTeamData();
   }, []);
 
+  const handleCycleChange = (newCycleId: string) => {
+    setSelectedCycleId(newCycleId);
+    fetchTeamData(newCycleId);
+  };
+
   const members = data?.members || [];
+  const reviewCycles = data?.reviewCycles || [];
+  const selectedCycle = reviewCycles.find(c => c.id === selectedCycleId);
   const totalMembers = data?.totalMembers || 0;
   const submittedCount = data?.submittedCount || 0;
   const atRiskCount = data?.atRiskCount || 0;
@@ -168,16 +179,46 @@ export default function TeamDashboardPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground font-headline">Team Dashboard</h1>
           <p className="text-xs text-muted-foreground">
-            {data?.isDirectReportsOnly ? 'Monitor performance review participation and sentiment across your direct reports' : 'Monitor performance review participation and sentiment across your organization'}
+            {data?.isDirectReportsOnly 
+              ? 'Monitor performance review participation and sentiment across your direct reports' 
+              : 'Monitor performance review participation and sentiment across your organization'}
           </p>
         </div>
-        {data?.userRole === 'admin' && (
-          <Button size="sm" className="h-9 font-medium shadow-sm" asChild>
-            <Link href="/admin/assignments">
-              <Users className="mr-1.5 h-4 w-4" /> Manage Team Reviews
-            </Link>
-          </Button>
-        )}
+        <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto">
+          {/* Review Cycle Selector Dropdown */}
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <CalendarClock className="h-4 w-4 text-muted-foreground shrink-0 hidden sm:inline-block" />
+            <Select value={selectedCycleId} onValueChange={handleCycleChange} disabled={isLoading || reviewCycles.length === 0}>
+              <SelectTrigger className="w-full sm:w-[240px] h-9 text-xs font-medium">
+                <SelectValue placeholder="Select Review Cycle..." />
+              </SelectTrigger>
+              <SelectContent>
+                {reviewCycles.map(cycle => (
+                  <SelectItem key={cycle.id} value={cycle.id} className="text-xs">
+                    <div className="flex items-center justify-between gap-2 w-full">
+                      <span>{cycle.name}</span>
+                      <span className={`text-[10px] px-1.5 py-0.2 rounded font-medium ${
+                        cycle.status === 'active' 
+                          ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300' 
+                          : 'bg-muted text-muted-foreground'
+                      }`}>
+                        {cycle.status}
+                      </span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {data?.userRole === 'admin' && (
+            <Button size="sm" className="h-9 font-medium shadow-sm shrink-0" asChild>
+              <Link href="/admin/assignments">
+                <Users className="mr-1.5 h-4 w-4" /> Manage Assignments
+              </Link>
+            </Button>
+          )}
+        </div>
       </div>
 
       {isLoading ? (
@@ -185,14 +226,50 @@ export default function TeamDashboardPage() {
           <Loader2 className="h-8 w-8 animate-spin text-primary mb-3" />
           <p className="text-xs text-muted-foreground">Loading team review metrics...</p>
         </div>
+      ) : reviewCycles.length === 0 ? (
+        <Card className="text-center py-16 border-dashed">
+          <CardContent>
+            <CalendarClock className="mx-auto h-10 w-10 text-muted-foreground mb-3" />
+            <h3 className="text-sm font-semibold text-foreground">No review cycles configured</h3>
+            <p className="text-xs text-muted-foreground mt-1 mb-4">
+              Create an active review cycle to begin tracking team evaluations.
+            </p>
+            {data?.userRole === 'admin' && (
+              <Button asChild size="sm">
+                <Link href="/admin/review-cycles">Create Review Cycle</Link>
+              </Button>
+            )}
+          </CardContent>
+        </Card>
       ) : (
         <>
+          {/* Cycle Info Bar */}
+          {selectedCycle && (
+            <div className="flex flex-wrap items-center justify-between gap-2 bg-muted/40 px-3.5 py-2 rounded-lg border border-border/60 text-xs">
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-foreground">{selectedCycle.name}</span>
+                <Badge variant="outline" className={`text-[10px] py-0 px-1.5 capitalize font-medium ${
+                  selectedCycle.status === 'active' 
+                    ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400' 
+                    : ''
+                }`}>
+                  {selectedCycle.status}
+                </Badge>
+              </div>
+              <div className="text-muted-foreground text-[11px] flex items-center gap-3">
+                <span>Period: {new Date(selectedCycle.startDate).toLocaleDateString()} – {new Date(selectedCycle.endDate).toLocaleDateString()}</span>
+                <span>•</span>
+                <span>{totalMembers} Cycle Participants</span>
+              </div>
+            </div>
+          )}
+
           {/* KPI Metrics */}
           <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
             <Card className="p-4 border border-border bg-card shadow-sm">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-medium text-muted-foreground">
-                  {data?.isDirectReportsOnly ? 'Direct Reports' : 'Team Members'}
+                  {data?.isDirectReportsOnly ? 'Direct Reports' : 'Cycle Participants'}
                 </span>
                 <Users className="h-4 w-4 text-primary" />
               </div>
@@ -248,7 +325,9 @@ export default function TeamDashboardPage() {
               <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
                 <div>
                   <CardTitle className="text-base font-semibold font-headline">Team Members Progress</CardTitle>
-                  <CardDescription className="text-xs">Detailed view of review status and automated feedback insights</CardDescription>
+                  <CardDescription className="text-xs">
+                    {selectedCycle ? `Evaluation status for ${selectedCycle.name}` : 'Detailed view of review status'}
+                  </CardDescription>
                 </div>
                 <div className="flex flex-col sm:flex-row gap-2.5">
                   <div className="relative">
@@ -278,20 +357,18 @@ export default function TeamDashboardPage() {
               {filteredMembers.length > 0 ? (
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                   {filteredMembers.map((member) => (
-                    <TeamMemberCard key={member.id} member={member} />
+                    <TeamMemberCard key={member.id} member={member} cycleId={selectedCycleId} />
                   ))}
                 </div>
               ) : (
                 <div className="text-center py-12">
                   <Users className="mx-auto h-10 w-10 text-muted-foreground mb-3" />
                   <h3 className="text-sm font-semibold text-foreground">
-                    {members.length === 0 ? "No team members found" : "No team members match your filter"}
+                    {members.length === 0 ? "No participants found for this cycle" : "No team members match your filter"}
                   </h3>
                   <p className="text-xs text-muted-foreground mt-1">
                     {members.length === 0 
-                      ? (data?.isDirectReportsOnly 
-                          ? "No direct reports are assigned to you yet in Manage Staff." 
-                          : "No staff members found in the directory.")
+                      ? "There are no team members participating in the selected review cycle."
                       : "Try changing the search query or status filter."}
                   </p>
                 </div>

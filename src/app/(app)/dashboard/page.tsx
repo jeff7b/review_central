@@ -18,6 +18,13 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   CheckCircle,
   Edit3,
   FileText,
@@ -35,9 +42,9 @@ import {
   Sparkles,
   Plus,
   Loader2,
-  ExternalLink
+  CalendarClock
 } from 'lucide-react';
-import type { Review, PersonalNote, HistoricalEvaluation } from '@/types';
+import type { Review, PersonalNote, HistoricalEvaluation, ReviewCycle } from '@/types';
 import { getDashboardDataAction, savePersonalNoteAction, deletePersonalNoteAction } from './actions';
 import { useToast } from '@/hooks/use-toast';
 
@@ -70,7 +77,7 @@ const getStatusBadge = (status: Review['status'], isOverdue: boolean) => {
         </Badge>
       );
     default:
-      return <Badge variant="secondary" className="text-xs">{(status as string).replace('_', ' ')}</Badge>;
+      return <Badge variant="secondary" className="text-xs">{((status || '') as string).replace('_', ' ')}</Badge>;
   }
 };
 
@@ -156,6 +163,8 @@ export default function DashboardPage() {
   const [peerReviewsAssigned, setPeerReviewsAssigned] = useState<Review[]>([]);
   const [notes, setNotes] = useState<PersonalNote[]>([]);
   const [feedbackHistory, setFeedbackHistory] = useState<HistoricalEvaluation[]>([]);
+  const [reviewCycles, setReviewCycles] = useState<ReviewCycle[]>([]);
+  const [selectedCycleId, setSelectedCycleId] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
 
   // Notes state
@@ -167,14 +176,16 @@ export default function DashboardPage() {
   const [isSavingNote, setIsSavingNote] = useState(false);
   const { toast } = useToast();
 
-  const fetchDashboardData = async () => {
+  const fetchDashboardData = async (cycleId?: string) => {
     try {
       setIsLoading(true);
-      const data = await getDashboardDataAction();
+      const data = await getDashboardDataAction(cycleId);
       setSelfReviews(data.selfReviews);
       setPeerReviewsAssigned(data.peerReviewsAssigned);
       setNotes(data.notes);
       setFeedbackHistory(data.feedbackHistory);
+      setReviewCycles(data.reviewCycles);
+      setSelectedCycleId(data.selectedCycleId);
     } catch (error) {
       console.error('Failed to load dashboard data:', error);
       toast({
@@ -191,6 +202,12 @@ export default function DashboardPage() {
     fetchDashboardData();
   }, []);
 
+  const handleCycleChange = (newCycleId: string) => {
+    setSelectedCycleId(newCycleId);
+    fetchDashboardData(newCycleId);
+  };
+
+  const selectedCycle = reviewCycles.find(c => c.id === selectedCycleId);
   const allReviews = [...selfReviews, ...peerReviewsAssigned];
   const pendingCount = allReviews.filter(r => r.status === 'draft' || r.status === 'pending_submission').length;
   const completedCount = allReviews.filter(r => r.status === 'submitted' || r.status === 'completed').length;
@@ -255,6 +272,8 @@ export default function DashboardPage() {
     }
   };
 
+  const startReviewHref = selectedCycleId ? `/reviews/self/new?cycleId=${selectedCycleId}` : '/reviews/self/new';
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -263,11 +282,39 @@ export default function DashboardPage() {
           <h1 className="text-2xl font-bold tracking-tight text-foreground font-headline">My Dashboard</h1>
           <p className="text-xs text-muted-foreground">Manage your performance self-evaluations, assigned peer reviews, personal notes, and feedback history</p>
         </div>
-        <Button asChild size="sm" className="h-9 font-medium shadow-sm">
-          <Link href="/reviews/self/new">
-            <PlusCircle className="mr-1.5 h-4 w-4" /> Start New Self-Review
-          </Link>
-        </Button>
+        <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto">
+          {/* Review Cycle Selector Dropdown */}
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <CalendarClock className="h-4 w-4 text-muted-foreground shrink-0 hidden sm:inline-block" />
+            <Select value={selectedCycleId} onValueChange={handleCycleChange} disabled={isLoading || reviewCycles.length === 0}>
+              <SelectTrigger className="w-full sm:w-[240px] h-9 text-xs font-medium">
+                <SelectValue placeholder="Select Review Cycle..." />
+              </SelectTrigger>
+              <SelectContent>
+                {reviewCycles.map(cycle => (
+                  <SelectItem key={cycle.id} value={cycle.id} className="text-xs">
+                    <div className="flex items-center justify-between gap-2 w-full">
+                      <span>{cycle.name}</span>
+                      <span className={`text-[10px] px-1.5 py-0.2 rounded font-medium ${
+                        cycle.status === 'active' 
+                          ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300' 
+                          : 'bg-muted text-muted-foreground'
+                      }`}>
+                        {cycle.status}
+                      </span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <Button asChild size="sm" className="h-9 font-medium shadow-sm shrink-0">
+            <Link href={startReviewHref}>
+              <PlusCircle className="mr-1.5 h-4 w-4" /> Start New Self-Review
+            </Link>
+          </Button>
+        </div>
       </div>
 
       {isLoading ? (
@@ -277,6 +324,25 @@ export default function DashboardPage() {
         </div>
       ) : (
         <>
+          {/* Cycle Info Bar */}
+          {selectedCycle && (
+            <div className="flex flex-wrap items-center justify-between gap-2 bg-muted/40 px-3.5 py-2 rounded-lg border border-border/60 text-xs">
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-foreground">{selectedCycle.name}</span>
+                <Badge variant="outline" className={`text-[10px] py-0 px-1.5 capitalize font-medium ${
+                  selectedCycle.status === 'active' 
+                    ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400' 
+                    : ''
+                }`}>
+                  {selectedCycle.status}
+                </Badge>
+              </div>
+              <div className="text-muted-foreground text-[11px] flex items-center gap-3">
+                <span>Period: {new Date(selectedCycle.startDate).toLocaleDateString()} – {new Date(selectedCycle.endDate).toLocaleDateString()}</span>
+              </div>
+            </div>
+          )}
+
           {/* KPI Metric Summary Cards */}
           <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
             <Card className="p-4 border border-border bg-card shadow-sm">
@@ -358,9 +424,13 @@ export default function DashboardPage() {
                   <CardContent>
                     <FileText className="mx-auto h-10 w-10 text-muted-foreground mb-3" />
                     <h3 className="text-sm font-semibold text-foreground">No self-reviews found</h3>
-                    <p className="text-xs text-muted-foreground mt-1 mb-4">You have no active self-review drafts or submissions.</p>
+                    <p className="text-xs text-muted-foreground mt-1 mb-4">
+                      {selectedCycle 
+                        ? `You have no active self-review drafts or submissions for ${selectedCycle.name}.`
+                        : "You have no active self-review drafts or submissions."}
+                    </p>
                     <Button asChild size="sm">
-                      <Link href="/reviews/self/new">Start New Self-Review</Link>
+                      <Link href={startReviewHref}>Start New Self-Review</Link>
                     </Button>
                   </CardContent>
                 </Card>
@@ -380,7 +450,11 @@ export default function DashboardPage() {
                   <CardContent>
                     <Users className="mx-auto h-10 w-10 text-muted-foreground mb-3" />
                     <h3 className="text-sm font-semibold text-foreground">No peer reviews assigned</h3>
-                    <p className="text-xs text-muted-foreground mt-1">You will be notified when peer evaluations are assigned to you.</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {selectedCycle 
+                        ? `You have no peer review assignments for ${selectedCycle.name}.`
+                        : "You will be notified when peer evaluations are assigned to you."}
+                    </p>
                   </CardContent>
                 </Card>
               )}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -29,7 +29,10 @@ import { useToast } from '@/hooks/use-toast';
 export default function TeamMemberDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const memberId = params.id as string;
+  const cycleId = searchParams.get('cycleId') || undefined;
+
   const [detail, setDetail] = useState<TeamMemberDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
@@ -39,7 +42,7 @@ export default function TeamMemberDetailPage() {
       if (!memberId) return;
       try {
         setIsLoading(true);
-        const res = await getTeamMemberDetailAction(memberId);
+        const res = await getTeamMemberDetailAction(memberId, cycleId);
         if (!res) {
           toast({
             variant: 'destructive',

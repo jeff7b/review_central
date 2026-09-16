@@ -35,17 +35,51 @@ export interface DashboardData {
   notes: PersonalNote[];
   feedbackHistory: HistoricalEvaluation[];
   currentUser: User;
+  reviewCycles: ReviewCycle[];
+  selectedCycleId: string;
 }
 
 /**
- * Fetches all dashboard data for the authenticated user from live Firestore collections.
+ * Fetches all dashboard data for the authenticated user from live Firestore collections,
+ * scoped to a specific Review Cycle.
  */
-export async function getDashboardDataAction(): Promise<DashboardData> {
+export async function getDashboardDataAction(cycleId?: string): Promise<DashboardData> {
   const currentUser = await getCurrentAppUser();
   const userId = currentUser.id;
 
   try {
-    // 1. Fetch user's self reviews from 'reviews' collection
+    // 1. Fetch all review cycles
+    const cyclesSnap = await adminDb.collection('review-cycles').get().catch(() => null);
+    let reviewCycles: ReviewCycle[] = [];
+
+    if (cyclesSnap && !cyclesSnap.empty) {
+      reviewCycles = cyclesSnap.docs.map(doc => {
+        const d = doc.data();
+        return {
+          id: doc.id,
+          name: d.name || 'Untitled Cycle',
+          status: d.status || 'draft',
+          startDate: toISOString(d.startDate),
+          endDate: toISOString(d.endDate),
+          participantIds: Array.isArray(d.participantIds) ? d.participantIds : [],
+          createdAt: toISOString(d.createdAt),
+          updatedAt: toISOString(d.updatedAt),
+        } as ReviewCycle;
+      });
+      // Sort by startDate desc
+      reviewCycles.sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime());
+    }
+
+    // Determine selected cycle:
+    let selectedCycleId = cycleId || '';
+    if (!selectedCycleId || !reviewCycles.some(c => c.id === selectedCycleId)) {
+      const active = reviewCycles.find(c => c.status === 'active');
+      selectedCycleId = active ? active.id : (reviewCycles[0]?.id || '');
+    }
+
+    const selectedCycle = reviewCycles.find(c => c.id === selectedCycleId);
+
+    // 2. Fetch user's self reviews from 'reviews' collection
     const selfReviewsSnap = await adminDb.collection('reviews')
       .where('type', '==', 'self')
       .where('revieweeId', '==', userId)
@@ -56,58 +90,60 @@ export async function getDashboardDataAction(): Promise<DashboardData> {
     if (selfReviewsSnap && !selfReviewsSnap.empty) {
       selfReviewsSnap.docs.forEach(doc => {
         const d = doc.data();
-        userSelfReviews.push({
-          id: doc.id,
-          title: d.title || 'Self-Review',
-          type: 'self',
-          status: d.status || 'draft',
-          dueDate: d.dueDate ? toISOString(d.dueDate) : undefined,
-          questionnaireId: d.questionnaireId || '',
-          questions: d.questions || [],
-          answers: d.answers || [],
-          createdAt: toISOString(d.createdAt),
-          updatedAt: toISOString(d.updatedAt),
-        });
+        const cycleMatches = !selectedCycle ||
+          d.reviewCycleId === selectedCycle.id ||
+          (d.title && selectedCycle.name && d.title.includes(selectedCycle.name));
+
+        if (cycleMatches) {
+          userSelfReviews.push({
+            id: doc.id,
+            title: d.title || (selectedCycle ? `${selectedCycle.name} Self-Review` : 'Self-Review'),
+            type: 'self',
+            status: d.status || 'draft',
+            dueDate: d.dueDate ? toISOString(d.dueDate) : (selectedCycle ? toISOString(selectedCycle.endDate) : undefined),
+            questionnaireId: d.questionnaireId || '',
+            questions: d.questions || [],
+            answers: d.answers || [],
+            createdAt: toISOString(d.createdAt),
+            updatedAt: toISOString(d.updatedAt),
+          });
+        }
       });
     }
 
-    // Also check for active cycles where user is participant but has not started self-review
-    const activeCyclesSnap = await adminDb.collection('review-cycles')
-      .where('status', '==', 'active')
-      .get()
-      .catch(() => null);
-
-    if (activeCyclesSnap && !activeCyclesSnap.empty) {
-      for (const cycleDoc of activeCyclesSnap.docs) {
-        const cycle = cycleDoc.data() as ReviewCycle;
-        const isParticipant = cycle.participantIds && cycle.participantIds.includes(userId);
-        if (isParticipant) {
-          const alreadyHasReview = userSelfReviews.some(
-            r => (r as any).reviewCycleId === cycleDoc.id || r.title.includes(cycle.name)
-          );
-          if (!alreadyHasReview) {
-            userSelfReviews.push({
-              id: `cycle-invitation-${cycleDoc.id}`,
-              title: `${cycle.name} Self-Review`,
-              type: 'self',
-              status: 'pending_submission',
-              dueDate: toISOString(cycle.endDate),
-              questionnaireId: '',
-              questions: [],
-              answers: [],
-              createdAt: toISOString(cycle.createdAt),
-              updatedAt: toISOString(cycle.updatedAt),
-            });
-          }
+    // Check if user is a participant in the selected cycle and hasn't started a self-review yet
+    if (selectedCycle) {
+      const isParticipant = !selectedCycle.participantIds || selectedCycle.participantIds.length === 0 || selectedCycle.participantIds.includes(userId);
+      if (isParticipant) {
+        const alreadyHasReview = userSelfReviews.some(
+          r => (r as any).reviewCycleId === selectedCycle.id || r.title.includes(selectedCycle.name)
+        );
+        if (!alreadyHasReview) {
+          userSelfReviews.push({
+            id: `cycle-invitation-${selectedCycle.id}`,
+            title: `${selectedCycle.name} Self-Review`,
+            type: 'self',
+            status: 'pending_submission',
+            dueDate: toISOString(selectedCycle.endDate),
+            questionnaireId: '',
+            questions: [],
+            answers: [],
+            createdAt: toISOString(selectedCycle.createdAt),
+            updatedAt: toISOString(selectedCycle.updatedAt),
+          });
         }
       }
     }
 
-    // 2. Fetch assigned peer reviews from 'peer-review-assignments'
-    const assignedPeerSnap = await adminDb.collection('peer-review-assignments')
-      .where('reviewerId', '==', userId)
-      .get()
-      .catch(() => null);
+    // 3. Fetch assigned peer reviews from 'peer-review-assignments'
+    let assignedPeerQuery = adminDb.collection('peer-review-assignments')
+      .where('reviewerId', '==', userId) as FirebaseFirestore.Query;
+
+    if (selectedCycleId) {
+      assignedPeerQuery = assignedPeerQuery.where('reviewCycleId', '==', selectedCycleId);
+    }
+
+    const assignedPeerSnap = await assignedPeerQuery.get().catch(() => null);
 
     const peerReviewsAssigned: Review[] = [];
     if (assignedPeerSnap && !assignedPeerSnap.empty) {
@@ -138,7 +174,7 @@ export async function getDashboardDataAction(): Promise<DashboardData> {
       });
     }
 
-    // 3. Fetch user's personal notes from 'personal-notes'
+    // 4. Fetch user's personal notes from 'personal-notes'
     const notesSnap = await adminDb.collection('personal-notes')
       .where('userId', '==', userId)
       .get()
@@ -163,12 +199,16 @@ export async function getDashboardDataAction(): Promise<DashboardData> {
       notes.sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
     }
 
-    // 4. Fetch feedback history (completed peer reviews where user is reviewee)
-    const completedAssignmentsForUserSnap = await adminDb.collection('peer-review-assignments')
+    // 5. Fetch feedback history (completed peer reviews where user is reviewee)
+    let completedAssignmentsQuery = adminDb.collection('peer-review-assignments')
       .where('revieweeId', '==', userId)
-      .where('status', '==', 'completed')
-      .get()
-      .catch(() => null);
+      .where('status', '==', 'completed') as FirebaseFirestore.Query;
+
+    if (selectedCycleId) {
+      completedAssignmentsQuery = completedAssignmentsQuery.where('reviewCycleId', '==', selectedCycleId);
+    }
+
+    const completedAssignmentsForUserSnap = await completedAssignmentsQuery.get().catch(() => null);
 
     const feedbackHistory: HistoricalEvaluation[] = [];
     if (completedAssignmentsForUserSnap && !completedAssignmentsForUserSnap.empty) {
@@ -176,8 +216,8 @@ export async function getDashboardDataAction(): Promise<DashboardData> {
         const a = aDoc.data() as PeerReviewAssignment;
         feedbackHistory.push({
           id: `eval-${aDoc.id}`,
-          cycleTitle: `Peer Evaluation from ${a.reviewerName}`,
-          period: 'Review Cycle',
+          cycleTitle: selectedCycle ? selectedCycle.name : `Peer Evaluation from ${a.reviewerName}`,
+          period: selectedCycle ? `${new Date(selectedCycle.startDate).toLocaleDateString()} – ${new Date(selectedCycle.endDate).toLocaleDateString()}` : 'Review Cycle',
           completedDate: toISOString(a.updatedAt),
           type: '360 Peer Evaluation',
           overallRating: 'Completed',
@@ -223,6 +263,8 @@ export async function getDashboardDataAction(): Promise<DashboardData> {
       notes,
       feedbackHistory,
       currentUser,
+      reviewCycles,
+      selectedCycleId,
     };
   } catch (error) {
     console.error('Error fetching dashboard data:', error);
@@ -232,6 +274,8 @@ export async function getDashboardDataAction(): Promise<DashboardData> {
       notes: [],
       feedbackHistory: [],
       currentUser,
+      reviewCycles: [],
+      selectedCycleId: '',
     };
   }
 }

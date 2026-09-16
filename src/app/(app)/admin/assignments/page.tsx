@@ -379,19 +379,54 @@ const ReviewerInitialBadge = ({
   );
 };
 
-const AdminShortcutButton = ({
+const MentorShortcutButton = ({
   reviewee,
   adminUsers,
+  usersMap,
   assignmentsForReviewee,
   isSaving,
-  onAssignAdmin,
+  onAssignMentor,
 }: {
   reviewee: User;
   adminUsers: User[];
+  usersMap: Map<string, User>;
   assignmentsForReviewee: PeerReviewAssignment[];
   isSaving: boolean;
-  onAssignAdmin: (reviewee: User, adminUser: User) => void;
+  onAssignMentor: (reviewee: User, mentorUser: User) => void;
 }) => {
+  const mentorId = reviewee.mentorId || (reviewee as any).adminReviewerId;
+  const designatedMentor = mentorId ? usersMap.get(mentorId) : undefined;
+
+  // 1. If designated mentor is defined on the employee
+  if (designatedMentor) {
+    const isAssigned = assignmentsForReviewee.some(a => a.reviewerId === designatedMentor.id);
+    if (isAssigned) {
+      return (
+        <Badge
+          variant="outline"
+          className="border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 text-xs font-normal gap-1 h-7 px-2.5"
+        >
+          <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
+          <span>{designatedMentor.name.split(' ')[0]} (Mentor)</span>
+        </Badge>
+      );
+    }
+    return (
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => onAssignMentor(reviewee, designatedMentor)}
+        disabled={isSaving}
+        className="h-7 text-xs gap-1 border-primary/30 hover:border-primary hover:bg-primary/5 text-primary"
+        title={`Assign ${designatedMentor.name} as mentor reviewer`}
+      >
+        <Shield className="h-3.5 w-3.5" />
+        Set Mentor ({designatedMentor.name.split(' ')[0]})
+      </Button>
+    );
+  }
+
+  // 2. If an admin/mentor is already assigned as a reviewer
   const assignedAdminAssignment = assignmentsForReviewee.find(a =>
     adminUsers.some(adm => adm.id === a.reviewerId)
   );
@@ -404,7 +439,7 @@ const AdminShortcutButton = ({
         className="border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 text-xs font-normal gap-1 h-7 px-2.5"
       >
         <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
-        <span>{adminUser ? `${adminUser.name.split(' ')[0]} (Admin)` : 'Admin Assigned'}</span>
+        <span>{adminUser ? `${adminUser.name.split(' ')[0]} (Mentor)` : 'Mentor Assigned'}</span>
       </Badge>
     );
   }
@@ -420,7 +455,7 @@ const AdminShortcutButton = ({
 
   if (availableAdmins.length === 0) {
     return (
-      <span className="text-xs text-muted-foreground italic px-2">No admin available</span>
+      <span className="text-xs text-muted-foreground italic px-2">No mentor available</span>
     );
   }
 
@@ -430,13 +465,13 @@ const AdminShortcutButton = ({
       <Button
         variant="outline"
         size="sm"
-        onClick={() => onAssignAdmin(reviewee, singleAdmin)}
+        onClick={() => onAssignMentor(reviewee, singleAdmin)}
         disabled={isSaving}
         className="h-7 text-xs gap-1 border-primary/30 hover:border-primary hover:bg-primary/5 text-primary"
-        title={`Assign ${singleAdmin.name} as reviewer`}
+        title={`Assign ${singleAdmin.name} as mentor reviewer`}
       >
         <Shield className="h-3.5 w-3.5" />
-        Set Admin ({singleAdmin.name.split(' ')[0]})
+        Set Mentor ({singleAdmin.name.split(' ')[0]})
       </Button>
     );
   }
@@ -452,17 +487,17 @@ const AdminShortcutButton = ({
           className="h-7 text-xs gap-1 border-primary/30 hover:border-primary hover:bg-primary/5 text-primary"
         >
           <Shield className="h-3.5 w-3.5" />
-          Set Admin
+          Set Mentor
           <ChevronsUpDown className="h-3 w-3 opacity-50 ml-0.5" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="text-xs w-48">
-        <DropdownMenuLabel className="text-xs">Select Admin Reviewer</DropdownMenuLabel>
+        <DropdownMenuLabel className="text-xs">Select Mentor</DropdownMenuLabel>
         <DropdownMenuSeparator />
         {availableAdmins.map(adm => (
           <DropdownMenuItem
             key={adm.id}
-            onClick={() => onAssignAdmin(reviewee, adm)}
+            onClick={() => onAssignMentor(reviewee, adm)}
             className="cursor-pointer"
           >
             <Avatar className="h-4 w-4 mr-2">
@@ -857,8 +892,8 @@ export default function AdminAssignmentsPage() {
     }
   };
 
-  const handleAssignAdmin = (reviewee: User, adminUser: User) => {
-    return handleAssignReviewer(reviewee, adminUser);
+  const handleAssignMentor = (reviewee: User, mentorUser: User) => {
+    return handleAssignReviewer(reviewee, mentorUser);
   };
 
   const closeForm = () => {
@@ -1031,7 +1066,7 @@ export default function AdminAssignmentsPage() {
                               Reviewers
                             </TableHead>
                             <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground w-[180px]">
-                              Admin Reviewer
+                              Mentor
                             </TableHead>
                             <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground text-right pr-6 w-[150px]">
                               Actions
@@ -1088,12 +1123,13 @@ export default function AdminAssignmentsPage() {
                                   )}
                                 </TableCell>
                                 <TableCell>
-                                  <AdminShortcutButton
+                                  <MentorShortcutButton
                                     reviewee={reviewee}
                                     adminUsers={adminUsers}
+                                    usersMap={usersMap}
                                     assignmentsForReviewee={revieweeAssignments}
                                     isSaving={isSaving}
-                                    onAssignAdmin={handleAssignAdmin}
+                                    onAssignMentor={handleAssignMentor}
                                   />
                                 </TableCell>
                                 <TableCell className="text-right pr-6">

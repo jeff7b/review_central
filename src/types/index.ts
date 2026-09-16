@@ -6,6 +6,7 @@ export interface User {
   avatarUrl?: string;
   role: 'employee' | 'team_leader' | 'admin';
   mentorId?: string | null;
+  adminReviewerId?: string | null;
 }
 
 

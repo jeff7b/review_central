@@ -21,7 +21,7 @@ function toISOString(val: unknown): string {
   return new Date(val as any).toISOString();
 }
 
-export const defaultSelfQuestions: Question[] = [
+const defaultSelfQuestions: Question[] = [
   { id: 'q1', text: 'What were your major accomplishments in the last review period?', order: 1 },
   { id: 'q2', text: 'What are some areas where you faced challenges, and how did you address them?', order: 2 },
   { id: 'q3', text: 'What are your key strengths, and how did you leverage them?', order: 3 },
@@ -29,7 +29,7 @@ export const defaultSelfQuestions: Question[] = [
   { id: 'q5', text: 'What are your goals for the next review period?', order: 5 },
 ];
 
-export const defaultPeerQuestions: Question[] = [
+const defaultPeerQuestions: Question[] = [
   { id: 'pq1', text: 'How has this peer contributed to team goals?', order: 1 },
   { id: 'pq2', text: 'Describe a situation where this peer demonstrated strong collaboration skills.', order: 2 },
   { id: 'pq3', text: "What are this peer's key strengths from your perspective?", order: 3 },
@@ -420,7 +420,7 @@ export async function submitSelfReviewAction(params: {
 }
 
 // Aliases for compatibility
-export const getSelfReviewDataAction = async (params: { cycleId?: string; reviewId?: string }) => {
+export async function getSelfReviewDataAction(params: { cycleId?: string; reviewId?: string }) {
   if (params.reviewId) {
     const res = await getSelfReviewAction(params.reviewId);
     return {
@@ -435,15 +435,15 @@ export const getSelfReviewDataAction = async (params: { cycleId?: string; review
     questionnaire: context.questionnaire,
     existingReview: null,
   };
-};
+}
 
-export const saveSelfReviewAction = async (params: {
+export async function saveSelfReviewAction(params: {
   reviewId?: string;
   reviewCycleId?: string | null;
   questionnaireId?: string;
   answers: Answer[];
   isDraft: boolean;
-}) => {
+}) {
   return submitSelfReviewAction({
     id: params.reviewId,
     reviewCycleId: params.reviewCycleId || undefined,
@@ -452,9 +452,9 @@ export const saveSelfReviewAction = async (params: {
     answers: params.answers,
     isDraft: params.isDraft,
   });
-};
+}
 
-export const getPeerReviewDataAction = async (assignmentId: string) => {
+export async function getPeerReviewDataAction(assignmentId: string) {
   const res = await getPeerReviewAssignmentAction(assignmentId);
   return {
     assignment: res.assignment,
@@ -462,6 +462,8 @@ export const getPeerReviewDataAction = async (assignmentId: string) => {
     questionnaire: res.questionnaire,
     existingReview: null,
   };
-};
+}
 
-export const savePeerReviewAction = submitPeerReviewAction;
+export async function savePeerReviewAction(params: Parameters<typeof submitPeerReviewAction>[0]) {
+  return submitPeerReviewAction(params);
+}

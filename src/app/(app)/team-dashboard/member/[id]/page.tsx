@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,13 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   ArrowLeft,
   CheckCircle2,
@@ -59,68 +66,48 @@ import {
 } from './actions';
 import type { QuestionFeedbackCollation, MentorFeedback, MentorFeedbackActionItem, PeerQuestionResponse } from '@/types';
 
-export default function TeamMemberProfilePage() {
-  const params = useParams();
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const memberId = (params?.id as string) || 'tm1';
-  const cycleId = searchParams?.get('cycleId') || undefined;
-  const { toast } = useToast();
+interface MentorNotesPanelProps {
+  employeeName: string;
+  isConnected: boolean;
+  isSyncing: boolean;
+  lastSyncedAt: Date | null;
+  liveFeedback: MentorFeedback | null;
+  saveFeedback: (partial: Partial<MentorFeedback>, immediate?: boolean) => void;
+  cycleId?: string;
+  reviewCycleId?: string;
+  reviewCycleName?: string;
+}
 
-  const [isLoadingProfile, setIsLoadingProfile] = useState(true);
-  const [profileData, setProfileData] = useState<Awaited<ReturnType<typeof getMemberFeedbackProfileAction>> | null>(null);
-  const [activeTab, setActiveTab] = useState('collated-questions');
-  const [isSplitView, setIsSplitView] = useState(false);
-  const [isAnonymized, setIsAnonymized] = useState(true);
-  const [questionSearch, setQuestionSearch] = useState('');
+function MentorNotesPanel({
+  employeeName,
+  isConnected,
+  isSyncing,
+  lastSyncedAt,
+  liveFeedback,
+  saveFeedback,
+  cycleId,
+  reviewCycleId,
+  reviewCycleName,
+}: MentorNotesPanelProps) {
+  const { toast } = useToast();
+  const [notes, setNotes] = useState(liveFeedback?.sharedNotes || '');
+  const isNotesFocusedRef = useRef(false);
   const [newActionItemText, setNewActionItemText] = useState('');
   const [newStrengthText, setNewStrengthText] = useState('');
   const [newGrowthText, setNewGrowthText] = useState('');
-  const [expandedQuestions, setExpandedQuestions] = useState<Record<string, boolean>>({
-    q1: true,
-    q2: true,
-    q3: true,
-    q4: true,
-    q5: true,
-  });
 
-  // Fetch initial member profile and questions collation
+  // Keep local notes in sync with incoming feedback only when the user is not actively typing
   useEffect(() => {
-    async function loadData() {
-      setIsLoadingProfile(true);
-      try {
-        const data = await getMemberFeedbackProfileAction(memberId, cycleId);
-        setProfileData(data);
-      } catch (err) {
-        console.error('Error loading member profile:', err);
-        toast({
-          variant: 'destructive',
-          title: 'Error loading profile',
-          description: 'Failed to load member feedback information.',
-        });
-      } finally {
-        setIsLoadingProfile(false);
-      }
+    if (!isNotesFocusedRef.current && liveFeedback?.sharedNotes !== undefined) {
+      setNotes(liveFeedback.sharedNotes);
     }
-    loadData();
-  }, [memberId, cycleId, toast]);
-
-  // Connect to live mentor feedback sync
-  const {
-    feedback: liveFeedback,
-    saveFeedback,
-    isConnected,
-    isSyncing,
-    lastSyncedAt,
-  } = useLiveMentorFeedback({
-    employeeId: memberId,
-    initialFeedback: profileData?.mentorFeedback || null,
-    role: 'mentor',
-  });
+  }, [liveFeedback?.sharedNotes]);
 
   // Handler for updating shared notes with live broadcast
   const handleNotesChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    saveFeedback({ sharedNotes: e.target.value });
+    const newVal = e.target.value;
+    setNotes(newVal);
+    saveFeedback({ sharedNotes: newVal });
   };
 
   // Add Action Item
@@ -204,6 +191,348 @@ export default function TeamMemberProfilePage() {
       true
     );
   };
+
+  return (
+    <Card className="border border-border bg-card shadow-sm h-full flex flex-col">
+      <CardHeader className="pb-4 border-b border-border/50">
+        <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <Badge variant="outline" className="text-xs font-semibold border-primary/40 bg-primary/5 text-primary">
+                <Sparkles className="mr-1 h-3 w-3" /> Mentor 1:1 Shared Session
+              </Badge>
+              <div className="flex items-center gap-1.5 text-[11px]">
+                <span className={`inline-block h-2 w-2 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-400'}`} />
+                <span className="text-muted-foreground font-medium">
+                  {isConnected ? 'Live Sync Active' : 'Connecting Sync...'}
+                </span>
+              </div>
+            </div>
+            <CardTitle className="text-base font-bold font-headline">
+              Feedback & Shared Notes for {employeeName}
+            </CardTitle>
+            <CardDescription className="text-xs">
+              Live shared workspace during in-person or Teams 1:1 feedback review. Updates dynamically on the employee&apos;s dashboard.
+            </CardDescription>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Badge
+              variant="outline"
+              className={`text-xs px-2.5 py-1 font-medium ${
+                liveFeedback?.isShared
+                  ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-400'
+                  : 'border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-800'
+              }`}
+            >
+              <Radio className="mr-1.5 h-3 w-3 text-emerald-500 animate-pulse" />
+              {liveFeedback?.isShared ? 'Shared to Employee Screen' : 'Private Draft'}
+            </Badge>
+          </div>
+        </div>
+      </CardHeader>
+
+      <CardContent className="p-4 sm:p-6 space-y-6 flex-1 overflow-y-auto">
+        {/* Live Shared Notes Editor */}
+        <div className="space-y-2">
+          <div className="flex justify-between items-center">
+            <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+              <MessageSquare className="h-3.5 w-3.5 text-primary" />
+              Mentor Feedback & 1:1 Discussion Notes
+            </label>
+            <span className="text-[11px] text-muted-foreground">
+              {isSyncing ? (
+                <span className="text-primary font-medium flex items-center gap-1">
+                  <span className="animate-spin text-xs">⟳</span> Syncing...
+                </span>
+              ) : lastSyncedAt ? (
+                `Synced at ${lastSyncedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`
+              ) : (
+                'Live broadcast enabled'
+              )}
+            </span>
+          </div>
+
+          <Textarea
+            value={notes}
+            onFocus={() => {
+              isNotesFocusedRef.current = true;
+            }}
+            onBlur={() => {
+              isNotesFocusedRef.current = false;
+              if (notes !== liveFeedback?.sharedNotes) {
+                saveFeedback({ sharedNotes: notes }, true);
+              }
+            }}
+            onChange={handleNotesChange}
+            placeholder={`Summarize the key takeaways, commendations, and strategic expectations discussed with ${employeeName}...`}
+            className="min-h-[140px] text-xs leading-relaxed border-border font-sans focus-visible:ring-1"
+          />
+          <p className="text-[11px] text-muted-foreground flex items-center gap-1">
+            <Radio className="h-3 w-3 text-emerald-600" />
+            As you type, these notes update in real time on {employeeName}&apos;s Dashboard under Feedback History.
+          </p>
+        </div>
+
+        <Separator />
+
+        {/* Agreed Action Items Checklist */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <h4 className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                <CheckCircle2 className="h-3.5 w-3.5 text-primary" /> Agreed Action Items & Milestones
+              </h4>
+              <p className="text-[11px] text-muted-foreground">
+                Measurable follow-up commitments agreed upon during this 1:1 review session.
+              </p>
+            </div>
+            <span className="text-xs font-medium text-muted-foreground">
+              {(liveFeedback?.actionItems || []).filter((i) => i.completed).length} /{' '}
+              {(liveFeedback?.actionItems || []).length} completed
+            </span>
+          </div>
+
+          {/* Action item input */}
+          <form onSubmit={handleAddActionItem} className="flex gap-2">
+            <Input
+              value={newActionItemText}
+              onChange={(e) => setNewActionItemText(e.target.value)}
+              placeholder="Add an actionable goal or commitment (e.g. Lead Q4 architecture sync)..."
+              className="h-8 text-xs"
+            />
+            <Button type="submit" size="sm" className="h-8 text-xs shrink-0">
+              <Plus className="mr-1 h-3.5 w-3.5" /> Add Item
+            </Button>
+          </form>
+
+          {/* Action items list */}
+          <div className="space-y-2 pt-1">
+            {(liveFeedback?.actionItems || []).length > 0 ? (
+              (liveFeedback?.actionItems || []).map((item) => (
+                <div
+                  key={item.id}
+                  className={`flex items-start justify-between gap-3 p-2.5 rounded-md border text-xs transition-colors ${
+                    item.completed
+                      ? 'bg-muted/40 border-border/50 text-muted-foreground line-through'
+                      : 'bg-card border-border hover:border-border/80'
+                  }`}
+                >
+                  <div
+                    onClick={() => handleToggleActionItem(item.id)}
+                    className="flex items-start gap-2.5 cursor-pointer flex-1"
+                  >
+                    <div
+                      className={`h-4 w-4 rounded border mt-0.5 flex items-center justify-center shrink-0 transition-colors ${
+                        item.completed
+                          ? 'bg-emerald-600 border-emerald-600 text-white'
+                          : 'border-muted-foreground/50 hover:border-primary'
+                      }`}
+                    >
+                      {item.completed && <Check className="h-3 w-3" />}
+                    </div>
+                    <span className="leading-snug">{item.text}</span>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => handleDeleteActionItem(item.id)}
+                    className="h-6 w-6 text-muted-foreground hover:text-destructive shrink-0"
+                    title="Delete item"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                </div>
+              ))
+            ) : (
+              <p className="text-xs text-muted-foreground italic py-2">
+                No action items added yet. Add agreed commitments above to track them in real time.
+              </p>
+            )}
+          </div>
+        </div>
+
+        <Separator />
+
+        {/* Strengths & Growth Areas Tags */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Recognized Strengths */}
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+              <Award className="h-3.5 w-3.5 text-emerald-600" /> Key Strengths to Highlight
+            </label>
+            <form onSubmit={handleAddStrength} className="flex gap-1.5">
+              <Input
+                value={newStrengthText}
+                onChange={(e) => setNewStrengthText(e.target.value)}
+                placeholder="Add a strength..."
+                className="h-7 text-xs"
+              />
+              <Button type="submit" size="sm" variant="outline" className="h-7 text-xs px-2">
+                <Plus className="h-3 w-3" />
+              </Button>
+            </form>
+            <div className="flex flex-wrap gap-1.5 pt-1">
+              {(liveFeedback?.strengths || []).map((str) => (
+                <Badge
+                  key={str}
+                  variant="outline"
+                  className="text-[11px] py-0.5 pl-2 pr-1.5 bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800 flex items-center gap-1"
+                >
+                  <span>{str}</span>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveStrength(str)}
+                    className="text-emerald-700/70 hover:text-emerald-900 rounded-full p-0.5"
+                  >
+                    ×
+                  </button>
+                </Badge>
+              ))}
+            </div>
+          </div>
+
+          {/* Growth & Development Focus */}
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+              <TrendingUp className="h-3.5 w-3.5 text-blue-600" /> Focus Areas for Development
+            </label>
+            <form onSubmit={handleAddGrowth} className="flex gap-1.5">
+              <Input
+                value={newGrowthText}
+                onChange={(e) => setNewGrowthText(e.target.value)}
+                placeholder="Add a focus area..."
+                className="h-7 text-xs"
+              />
+              <Button type="submit" size="sm" variant="outline" className="h-7 text-xs px-2">
+                <Plus className="h-3 w-3" />
+              </Button>
+            </form>
+            <div className="flex flex-wrap gap-1.5 pt-1">
+              {(liveFeedback?.growthAreas || []).map((area) => (
+                <Badge
+                  key={area}
+                  variant="outline"
+                  className="text-[11px] py-0.5 pl-2 pr-1.5 bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800 flex items-center gap-1"
+                >
+                  <span>{area}</span>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveGrowth(area)}
+                    className="text-blue-700/70 hover:text-blue-900 rounded-full p-0.5"
+                  >
+                    ×
+                  </button>
+                </Badge>
+              ))}
+            </div>
+          </div>
+        </div>
+      </CardContent>
+
+      <CardFooter className="p-4 border-t border-border/50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 bg-muted/20">
+        <div className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+          <span>All edits are automatically saved and broadcast live to {employeeName}.</span>
+        </div>
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 text-xs font-medium"
+            onClick={() => {
+              saveFeedback({ isShared: !liveFeedback?.isShared }, true);
+              toast({
+                title: liveFeedback?.isShared ? 'Sharing Paused' : 'Live Sharing Activated',
+                description: liveFeedback?.isShared
+                  ? 'Notes are now in private draft.'
+                  : `Notes are now live on ${employeeName}'s Dashboard.`,
+              });
+            }}
+          >
+            <Share2 className="mr-1.5 h-3.5 w-3.5" />
+            {liveFeedback?.isShared ? 'Pause Live Sharing' : 'Activate Live Sharing'}
+          </Button>
+          <Button
+            size="sm"
+            className="h-8 text-xs font-medium shadow-sm"
+            onClick={() => {
+              saveFeedback({
+                status: 'finalized',
+                cycleId: reviewCycleId || cycleId,
+                cycleName: reviewCycleName,
+              }, true);
+              toast({
+                title: 'Feedback Session Finalized',
+                description: 'Record marked as completed and saved to feedback history.',
+              });
+            }}
+          >
+            <Check className="mr-1.5 h-3.5 w-3.5" />
+            Finalize 1:1 Session
+          </Button>
+        </div>
+      </CardFooter>
+    </Card>
+  );
+}
+
+export default function TeamMemberProfilePage() {
+  const params = useParams();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const memberId = (params?.id as string) || 'tm1';
+  const cycleId = searchParams?.get('cycleId') || undefined;
+  const { toast } = useToast();
+
+  const [isLoadingProfile, setIsLoadingProfile] = useState(true);
+  const [profileData, setProfileData] = useState<Awaited<ReturnType<typeof getMemberFeedbackProfileAction>> | null>(null);
+  const [activeTab, setActiveTab] = useState('collated-questions');
+  const [isSplitView, setIsSplitView] = useState(false);
+  const [isAnonymized, setIsAnonymized] = useState(true);
+  const [questionSearch, setQuestionSearch] = useState('');
+  const [expandedQuestions, setExpandedQuestions] = useState<Record<string, boolean>>({
+    q1: true,
+    q2: true,
+    q3: true,
+    q4: true,
+    q5: true,
+  });
+
+  // Fetch initial member profile and questions collation
+  useEffect(() => {
+    async function loadData() {
+      setIsLoadingProfile(true);
+      try {
+        const data = await getMemberFeedbackProfileAction(memberId, cycleId);
+        setProfileData(data);
+      } catch (err) {
+        console.error('Error loading member profile:', err);
+        toast({
+          variant: 'destructive',
+          title: 'Error loading profile',
+          description: 'Failed to load member feedback information.',
+        });
+      } finally {
+        setIsLoadingProfile(false);
+      }
+    }
+    loadData();
+  }, [memberId, cycleId, toast]);
+
+  // Connect to live mentor feedback sync
+  const {
+    feedback: liveFeedback,
+    saveFeedback,
+    isConnected,
+    isSyncing,
+    lastSyncedAt,
+  } = useLiveMentorFeedback({
+    employeeId: memberId,
+    initialFeedback: profileData?.mentorFeedback || null,
+    role: 'mentor',
+  });
 
   // Toggle single peer response approval
   const handleToggleResponseApproval = (responseId: string, currentApproved?: boolean) => {
@@ -397,290 +726,48 @@ export default function TeamMemberProfilePage() {
 
   const { employee } = profileData;
 
-  // The Mentor Notes Panel (Used in both normal tab and split-view mode)
-  const MentorNotesPanel = () => (
-    <Card className="border border-border bg-card shadow-sm h-full flex flex-col">
-      <CardHeader className="pb-4 border-b border-border/50">
-        <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <Badge variant="outline" className="text-xs font-semibold border-primary/40 bg-primary/5 text-primary">
-                <Sparkles className="mr-1 h-3 w-3" /> Mentor 1:1 Shared Session
-              </Badge>
-              <div className="flex items-center gap-1.5 text-[11px]">
-                <span className={`inline-block h-2 w-2 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-400'}`} />
-                <span className="text-muted-foreground font-medium">
-                  {isConnected ? 'Live Sync Active' : 'Connecting Sync...'}
-                </span>
-              </div>
-            </div>
-            <CardTitle className="text-base font-bold font-headline">
-              Feedback & Shared Notes for {employee.name}
-            </CardTitle>
-            <CardDescription className="text-xs">
-              Live shared workspace during in-person or Teams 1:1 feedback review. Updates dynamically on the employee&apos;s dashboard.
-            </CardDescription>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Badge
-              variant="outline"
-              className={`text-xs px-2.5 py-1 font-medium ${
-                liveFeedback?.isShared
-                  ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-400'
-                  : 'border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-800'
-              }`}
-            >
-              <Radio className="mr-1.5 h-3 w-3 text-emerald-500 animate-pulse" />
-              {liveFeedback?.isShared ? 'Shared to Employee Screen' : 'Private Draft'}
-            </Badge>
-          </div>
-        </div>
-      </CardHeader>
-
-      <CardContent className="p-4 sm:p-6 space-y-6 flex-1 overflow-y-auto">
-        {/* Live Shared Notes Editor */}
-        <div className="space-y-2">
-          <div className="flex justify-between items-center">
-            <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-              <MessageSquare className="h-3.5 w-3.5 text-primary" />
-              Mentor Feedback & 1:1 Discussion Notes
-            </label>
-            <span className="text-[11px] text-muted-foreground">
-              {isSyncing ? (
-                <span className="text-primary font-medium flex items-center gap-1">
-                  <span className="animate-spin text-xs">⟳</span> Syncing...
-                </span>
-              ) : lastSyncedAt ? (
-                `Synced at ${lastSyncedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`
-              ) : (
-                'Live broadcast enabled'
-              )}
-            </span>
-          </div>
-
-          <Textarea
-            value={liveFeedback?.sharedNotes || ''}
-            onChange={handleNotesChange}
-            placeholder={`Summarize the key takeaways, commendations, and strategic expectations discussed with ${employee.name}...`}
-            className="min-h-[140px] text-xs leading-relaxed border-border font-sans focus-visible:ring-1"
-          />
-          <p className="text-[11px] text-muted-foreground flex items-center gap-1">
-            <Radio className="h-3 w-3 text-emerald-600" />
-            As you type, these notes update in real time on {employee.name}&apos;s Dashboard under Feedback History.
-          </p>
-        </div>
-
-        <Separator />
-
-        {/* Agreed Action Items Checklist */}
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <h4 className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                <CheckCircle2 className="h-3.5 w-3.5 text-primary" /> Agreed Action Items & Milestones
-              </h4>
-              <p className="text-[11px] text-muted-foreground">
-                Measurable follow-up commitments agreed upon during this 1:1 review session.
-              </p>
-            </div>
-            <span className="text-xs font-medium text-muted-foreground">
-              {(liveFeedback?.actionItems || []).filter((i) => i.completed).length} /{' '}
-              {(liveFeedback?.actionItems || []).length} completed
-            </span>
-          </div>
-
-          {/* Action item input */}
-          <form onSubmit={handleAddActionItem} className="flex gap-2">
-            <Input
-              value={newActionItemText}
-              onChange={(e) => setNewActionItemText(e.target.value)}
-              placeholder="Add an actionable goal or commitment (e.g. Lead Q4 architecture sync)..."
-              className="h-8 text-xs"
-            />
-            <Button type="submit" size="sm" className="h-8 text-xs shrink-0">
-              <Plus className="mr-1 h-3.5 w-3.5" /> Add Item
-            </Button>
-          </form>
-
-          {/* Action items list */}
-          <div className="space-y-2 pt-1">
-            {(liveFeedback?.actionItems || []).length > 0 ? (
-              (liveFeedback?.actionItems || []).map((item) => (
-                <div
-                  key={item.id}
-                  className={`flex items-start justify-between gap-3 p-2.5 rounded-md border text-xs transition-colors ${
-                    item.completed
-                      ? 'bg-muted/40 border-border/50 text-muted-foreground line-through'
-                      : 'bg-card border-border hover:border-border/80'
-                  }`}
-                >
-                  <div
-                    onClick={() => handleToggleActionItem(item.id)}
-                    className="flex items-start gap-2.5 cursor-pointer flex-1"
-                  >
-                    <div
-                      className={`h-4 w-4 rounded border mt-0.5 flex items-center justify-center shrink-0 transition-colors ${
-                        item.completed
-                          ? 'bg-emerald-600 border-emerald-600 text-white'
-                          : 'border-muted-foreground/50 hover:border-primary'
-                      }`}
-                    >
-                      {item.completed && <Check className="h-3 w-3" />}
-                    </div>
-                    <span className="leading-snug">{item.text}</span>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => handleDeleteActionItem(item.id)}
-                    className="h-6 w-6 text-muted-foreground hover:text-destructive shrink-0"
-                    title="Delete item"
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </Button>
-                </div>
-              ))
-            ) : (
-              <p className="text-xs text-muted-foreground italic py-2">
-                No action items added yet. Add agreed commitments above to track them in real time.
-              </p>
-            )}
-          </div>
-        </div>
-
-        <Separator />
-
-        {/* Strengths & Growth Areas Tags */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Recognized Strengths */}
-          <div className="space-y-2">
-            <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-              <Award className="h-3.5 w-3.5 text-emerald-600" /> Key Strengths to Highlight
-            </label>
-            <form onSubmit={handleAddStrength} className="flex gap-1.5">
-              <Input
-                value={newStrengthText}
-                onChange={(e) => setNewStrengthText(e.target.value)}
-                placeholder="Add a strength..."
-                className="h-7 text-xs"
-              />
-              <Button type="submit" size="sm" variant="outline" className="h-7 text-xs px-2">
-                <Plus className="h-3 w-3" />
-              </Button>
-            </form>
-            <div className="flex flex-wrap gap-1.5 pt-1">
-              {(liveFeedback?.strengths || []).map((str) => (
-                <Badge
-                  key={str}
-                  variant="outline"
-                  className="text-[11px] py-0.5 pl-2 pr-1.5 bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800 flex items-center gap-1"
-                >
-                  <span>{str}</span>
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveStrength(str)}
-                    className="text-emerald-700/70 hover:text-emerald-900 rounded-full p-0.5"
-                  >
-                    ×
-                  </button>
-                </Badge>
-              ))}
-            </div>
-          </div>
-
-          {/* Growth & Development Focus */}
-          <div className="space-y-2">
-            <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-              <TrendingUp className="h-3.5 w-3.5 text-blue-600" /> Focus Areas for Development
-            </label>
-            <form onSubmit={handleAddGrowth} className="flex gap-1.5">
-              <Input
-                value={newGrowthText}
-                onChange={(e) => setNewGrowthText(e.target.value)}
-                placeholder="Add a focus area..."
-                className="h-7 text-xs"
-              />
-              <Button type="submit" size="sm" variant="outline" className="h-7 text-xs px-2">
-                <Plus className="h-3 w-3" />
-              </Button>
-            </form>
-            <div className="flex flex-wrap gap-1.5 pt-1">
-              {(liveFeedback?.growthAreas || []).map((area) => (
-                <Badge
-                  key={area}
-                  variant="outline"
-                  className="text-[11px] py-0.5 pl-2 pr-1.5 bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800 flex items-center gap-1"
-                >
-                  <span>{area}</span>
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveGrowth(area)}
-                    className="text-blue-700/70 hover:text-blue-900 rounded-full p-0.5"
-                  >
-                    ×
-                  </button>
-                </Badge>
-              ))}
-            </div>
-          </div>
-        </div>
-      </CardContent>
-
-      <CardFooter className="p-4 border-t border-border/50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 bg-muted/20">
-        <div className="text-[11px] text-muted-foreground flex items-center gap-1.5">
-          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-          <span>All edits are automatically saved and broadcast live to {employee.name}.</span>
-        </div>
-        <div className="flex items-center gap-2 w-full sm:w-auto">
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-8 text-xs font-medium"
-            onClick={() => {
-              saveFeedback({ isShared: !liveFeedback?.isShared }, true);
-              toast({
-                title: liveFeedback?.isShared ? 'Sharing Paused' : 'Live Sharing Activated',
-                description: liveFeedback?.isShared
-                  ? 'Notes are now in private draft.'
-                  : `Notes are now live on ${employee.name}'s Dashboard.`,
-              });
-            }}
-          >
-            <Share2 className="mr-1.5 h-3.5 w-3.5" />
-            {liveFeedback?.isShared ? 'Pause Live Sharing' : 'Activate Live Sharing'}
-          </Button>
-          <Button
-            size="sm"
-            className="h-8 text-xs font-medium shadow-sm"
-            onClick={() => {
-              saveFeedback({ status: 'finalized' }, true);
-              toast({
-                title: 'Feedback Session Finalized',
-                description: 'Record marked as completed and saved to feedback history.',
-              });
-            }}
-          >
-            <Check className="mr-1.5 h-3.5 w-3.5" />
-            Finalize 1:1 Session
-          </Button>
-        </div>
-      </CardFooter>
-    </Card>
-  );
-
   return (
     <div className="space-y-6">
       {/* Top Back Navigation & Action Bar */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <Button variant="ghost" size="sm" className="h-8 text-xs font-medium text-muted-foreground hover:text-foreground pl-0" asChild>
-          <Link href={cycleId ? `/team-dashboard?cycleId=${cycleId}` : "/team-dashboard"}>
+          <Link href={profileData?.reviewCycle?.id || cycleId ? `/team-dashboard?cycleId=${profileData?.reviewCycle?.id || cycleId}` : "/team-dashboard"}>
             <ArrowLeft className="mr-1.5 h-3.5 w-3.5" /> Back to Team Dashboard
           </Link>
         </Button>
 
-        <div className="flex items-center gap-2 self-end sm:self-auto">
+        <div className="flex flex-wrap items-center gap-2 self-end sm:self-auto">
+          {/* Review Cycle Selector Dropdown */}
+          {profileData?.reviewCycles && profileData.reviewCycles.length > 0 && (
+            <div className="flex items-center gap-1.5">
+              <Calendar className="h-3.5 w-3.5 text-muted-foreground hidden sm:inline-block" />
+              <Select
+                value={profileData.reviewCycle?.id || cycleId || profileData.reviewCycles[0]?.id}
+                onValueChange={(newCycleId) => {
+                  router.push(`/team-dashboard/member/${memberId}?cycleId=${newCycleId}`);
+                }}
+              >
+                <SelectTrigger className="h-8 text-xs font-medium w-[180px] sm:w-[220px]">
+                  <SelectValue placeholder="Select Review Cycle" />
+                </SelectTrigger>
+                <SelectContent>
+                  {profileData.reviewCycles.map((c) => (
+                    <SelectItem key={c.id} value={c.id} className="text-xs">
+                      <div className="flex items-center justify-between gap-2 w-full">
+                        <span>{c.name}</span>
+                        {c.status === 'active' && (
+                          <span className="text-[10px] px-1.5 py-0.2 rounded font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                            active
+                          </span>
+                        )}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
           <Button
             variant={isAnonymized ? 'secondary' : 'outline'}
             size="sm"
@@ -753,7 +840,7 @@ export default function TeamMemberProfilePage() {
                   </span>
                   <span>•</span>
                   <span>
-                    Cycle: <strong className="text-foreground font-medium">{profileData.reviewCycle?.name || liveFeedback?.cycleName || 'Active Review Cycle'}</strong>
+                    Cycle: <strong className="text-foreground font-medium">{profileData.reviewCycle?.name || (cycleId && profileData.reviewCycles?.find(c => c.id === cycleId)?.name) || 'Active Review Cycle'}</strong>
                   </span>
                 </div>
               </div>
@@ -860,7 +947,17 @@ export default function TeamMemberProfilePage() {
 
           {/* Right Column: Live Mentor Notes */}
           <div className="sticky top-4">
-            <MentorNotesPanel />
+            <MentorNotesPanel
+              employeeName={employee.name}
+              isConnected={isConnected}
+              isSyncing={isSyncing}
+              lastSyncedAt={lastSyncedAt}
+              liveFeedback={liveFeedback}
+              saveFeedback={saveFeedback}
+              cycleId={cycleId}
+              reviewCycleId={profileData.reviewCycle?.id}
+              reviewCycleName={profileData.reviewCycle?.name}
+            />
           </div>
         </div>
       ) : (
@@ -1017,7 +1114,17 @@ export default function TeamMemberProfilePage() {
 
           {/* TAB 2: Mentor Feedback & Live Notes */}
           <TabsContent value="mentor-notes" className="mt-4">
-            <MentorNotesPanel />
+            <MentorNotesPanel
+              employeeName={employee.name}
+              isConnected={isConnected}
+              isSyncing={isSyncing}
+              lastSyncedAt={lastSyncedAt}
+              liveFeedback={liveFeedback}
+              saveFeedback={saveFeedback}
+              cycleId={cycleId}
+              reviewCycleId={profileData.reviewCycle?.id}
+              reviewCycleName={profileData.reviewCycle?.name}
+            />
           </TabsContent>
 
           {/* TAB 3: Individual Peer Reviews */}

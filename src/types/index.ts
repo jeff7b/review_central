@@ -170,6 +170,13 @@ export interface MemberFeedbackProfile {
     name: string;
     status: string;
   };
+  reviewCycles?: {
+    id: string;
+    name: string;
+    status: string;
+    startDate?: string;
+    endDate?: string;
+  }[];
   collatedQuestions: QuestionFeedbackCollation[];
   mentorFeedback: MentorFeedback;
   aiInsights?: MemberFeedbackAIInsights;

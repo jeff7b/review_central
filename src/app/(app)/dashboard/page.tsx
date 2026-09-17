@@ -42,9 +42,23 @@ import {
   Sparkles,
   Plus,
   Loader2,
-  CalendarClock
+  CalendarClock,
+  ExternalLink,
+  Radio,
+  Check,
+  MessageSquare,
+  TrendingUp,
+  RefreshCw,
+  Lock,
+  ChevronDown,
+  ChevronUp,
+  Layers,
 } from 'lucide-react';
-import type { Review, PersonalNote, HistoricalEvaluation, ReviewCycle } from '@/types';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Separator } from '@/components/ui/separator';
+import { useLiveMentorFeedback } from '@/hooks/use-live-mentor-feedback';
+import { getMemberFeedbackProfileAction } from '@/app/(app)/team-dashboard/member/[id]/actions';
+import type { Review, PersonalNote, HistoricalEvaluation, ReviewCycle, QuestionFeedbackCollation } from '@/types';
 import { getDashboardDataAction, savePersonalNoteAction, deletePersonalNoteAction } from './actions';
 import { useToast } from '@/hooks/use-toast';
 
@@ -169,6 +183,45 @@ export default function DashboardPage() {
   const [reviewCycles, setReviewCycles] = useState<ReviewCycle[]>([]);
   const [selectedCycleId, setSelectedCycleId] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
+
+  // Live Mentor Feedback state for the employee
+  const [activeEmployeeId, setActiveEmployeeId] = useState('tm1');
+  const {
+    feedback: liveMentorFeedback,
+    saveFeedback: saveMentorFeedbackFromEmployee,
+    isConnected: isMentorSyncConnected,
+    isSyncing: isMentorSyncing,
+    lastSyncedAt: mentorLastSyncedAt,
+  } = useLiveMentorFeedback({
+    employeeId: activeEmployeeId,
+    role: 'employee',
+  });
+
+  const handleToggleEmployeeActionItem = (itemId: string) => {
+    if (!liveMentorFeedback) return;
+    const updated = (liveMentorFeedback.actionItems || []).map((item) =>
+      item.id === itemId ? { ...item, completed: !item.completed } : item
+    );
+    saveMentorFeedbackFromEmployee({ actionItems: updated }, true);
+  };
+
+  // Collated peer feedback received (strictly anonymous)
+  const [receivedQuestions, setReceivedQuestions] = useState<QuestionFeedbackCollation[]>([]);
+  const [showPeerFeedback, setShowPeerFeedback] = useState(false);
+
+  useEffect(() => {
+    async function loadReceivedPeerFeedback() {
+      try {
+        const data = await getMemberFeedbackProfileAction(activeEmployeeId);
+        if (data?.collatedQuestions) {
+          setReceivedQuestions(data.collatedQuestions);
+        }
+      } catch (err) {
+        console.error('Failed to load received feedback questions:', err);
+      }
+    }
+    loadReceivedPeerFeedback();
+  }, [activeEmployeeId]);
 
   // Notes state
   const [noteSearch, setNoteSearch] = useState('');
@@ -589,10 +642,321 @@ export default function DashboardPage() {
             </TabsContent>
 
             {/* TAB 4: Feedback History */}
-            <TabsContent value="feedback-history" className="mt-4 space-y-4">
-              <div className="flex items-center justify-between pb-1">
+            <TabsContent value="feedback-history" className="mt-4 space-y-6">
+              {/* FEEDBACK RECEIVED: Active 1:1 Live Mentor Feedback & Shared Notes */}
+              <div className="space-y-3">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 pb-1 border-b border-border/60">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-sm font-bold font-headline text-foreground">
+                        Feedback Received — Active 1:1 Mentor Session & Shared Notes
+                      </h2>
+                      <Badge variant="outline" className="text-[10px] font-semibold border-primary/30 bg-primary/5 text-primary">
+                        <Sparkles className="mr-1 h-3 w-3" /> Live Session
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Shared performance feedback, discussion notes, and agreed commitments provided by your Mentor / Team Lead. Updates in real-time during your 1:1 or Teams meeting.
+                    </p>
+                  </div>
+
+                  {/* Real-time sync badge */}
+                  <div className="flex items-center gap-2 self-end sm:self-auto">
+                    <Badge
+                      variant="outline"
+                      className={`text-xs px-2.5 py-1 font-medium gap-1.5 ${
+                        isMentorSyncConnected
+                          ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-300'
+                          : 'border-amber-200 bg-amber-50 text-amber-700'
+                      }`}
+                    >
+                      <span className={`h-2 w-2 rounded-full ${isMentorSyncConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-400'}`} />
+                      <span>{isMentorSyncConnected ? 'Live Sync Active' : 'Connecting...'}</span>
+                      {isMentorSyncing && <RefreshCw className="h-3 w-3 animate-spin ml-0.5" />}
+                    </Badge>
+                  </div>
+                </div>
+
+                {liveMentorFeedback && liveMentorFeedback.isShared ? (
+                  <Card className="border border-primary/20 bg-card shadow-sm overflow-hidden ring-1 ring-primary/10">
+                    <div className="h-1.5 bg-gradient-to-r from-blue-500 via-primary to-indigo-500" />
+                    <CardHeader className="pb-3 border-b border-border/40 bg-primary/5">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <Avatar className="h-10 w-10 ring-2 ring-primary/30">
+                            <AvatarImage src="https://placehold.co/100x100.png?text=DP" alt={liveMentorFeedback.mentorName} />
+                            <AvatarFallback className="text-xs font-bold">
+                              {liveMentorFeedback.mentorName.split(' ').map((n) => n[0]).join('')}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <CardTitle className="text-sm font-semibold font-headline">
+                                {liveMentorFeedback.mentorName}
+                              </CardTitle>
+                              <Badge variant="outline" className="text-[10px] border-border font-medium">
+                                {liveMentorFeedback.mentorRole || 'Mentor & Team Lead'}
+                              </Badge>
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                              {liveMentorFeedback.cycleName || 'FY2024 H2 Performance Review'}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="text-left sm:text-right">
+                          <span className="text-[11px] text-muted-foreground block">
+                            Last live update:
+                          </span>
+                          <span className="text-xs font-medium text-foreground">
+                            {mentorLastSyncedAt
+                              ? mentorLastSyncedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                              : new Date(liveMentorFeedback.lastUpdated).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                      </div>
+                    </CardHeader>
+
+                    <CardContent className="p-4 sm:p-6 space-y-5">
+                      {/* Shared Live Notes Area */}
+                      <div className="space-y-2">
+                        <h4 className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                          <MessageSquare className="h-3.5 w-3.5 text-primary" />
+                          1:1 Discussion Notes & Mentor Performance Feedback
+                        </h4>
+                        <div className="p-4 rounded-lg bg-muted/40 border border-border/50 text-xs leading-relaxed text-foreground whitespace-pre-wrap font-sans">
+                          {liveMentorFeedback.sharedNotes ? (
+                            liveMentorFeedback.sharedNotes
+                          ) : (
+                            <span className="italic text-muted-foreground">
+                              Your mentor is currently typing feedback. Notes will appear here live...
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Action Items Checklist */}
+                      {liveMentorFeedback.actionItems && liveMentorFeedback.actionItems.length > 0 && (
+                        <div className="space-y-2.5 pt-1">
+                          <div className="flex items-center justify-between">
+                            <h4 className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                              <CheckCircle className="h-3.5 w-3.5 text-emerald-600" />
+                              Agreed Action Items & Development Milestones
+                            </h4>
+                            <span className="text-[11px] text-muted-foreground font-medium">
+                              {liveMentorFeedback.actionItems.filter((a) => a.completed).length} / {liveMentorFeedback.actionItems.length} completed
+                            </span>
+                          </div>
+
+                          <div className="space-y-2">
+                            {liveMentorFeedback.actionItems.map((item) => (
+                              <div
+                                key={item.id}
+                                onClick={() => handleToggleEmployeeActionItem(item.id)}
+                                className={`flex items-start gap-2.5 p-2.5 rounded-md border text-xs cursor-pointer transition-all ${
+                                  item.completed
+                                    ? 'bg-muted/40 border-border/40 text-muted-foreground line-through'
+                                    : 'bg-card border-border hover:border-primary/50'
+                                }`}
+                              >
+                                <div
+                                  className={`h-4 w-4 rounded border mt-0.5 flex items-center justify-center shrink-0 transition-colors ${
+                                    item.completed
+                                      ? 'bg-emerald-600 border-emerald-600 text-white'
+                                      : 'border-muted-foreground/50'
+                                  }`}
+                                >
+                                  {item.completed && <Check className="h-3 w-3" />}
+                                </div>
+                                <span className="leading-snug select-none">{item.text}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Strengths & Growth Areas */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                        {liveMentorFeedback.strengths && liveMentorFeedback.strengths.length > 0 && (
+                          <div className="space-y-1.5">
+                            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                              <Award className="h-3.5 w-3.5 text-emerald-600" /> Strengths Recognized
+                            </span>
+                            <div className="flex flex-wrap gap-1.5">
+                              {liveMentorFeedback.strengths.map((str) => (
+                                <Badge
+                                  key={str}
+                                  variant="outline"
+                                  className="text-[11px] font-normal py-0.5 bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300"
+                                >
+                                  {str}
+                                </Badge>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {liveMentorFeedback.growthAreas && liveMentorFeedback.growthAreas.length > 0 && (
+                          <div className="space-y-1.5">
+                            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                              <TrendingUp className="h-3.5 w-3.5 text-blue-600" /> Focus Areas for Growth
+                            </span>
+                            <div className="flex flex-wrap gap-1.5">
+                              {liveMentorFeedback.growthAreas.map((area) => (
+                                <Badge
+                                  key={area}
+                                  variant="outline"
+                                  className="text-[11px] font-normal py-0.5 bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300"
+                                >
+                                  {area}
+                                </Badge>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+
+                    <CardFooter className="p-3 bg-muted/20 border-t border-border/40 flex justify-between items-center text-[11px] text-muted-foreground">
+                      <div className="flex items-center gap-1.5">
+                        <Radio className="h-3 w-3 text-emerald-600" />
+                        <span>Shared live notes area during your 1:1 meeting. Updates stream live without refreshing.</span>
+                      </div>
+                      <Button variant="ghost" size="sm" asChild className="h-7 text-xs text-primary">
+                        <Link href={`/team-dashboard/member/${activeEmployeeId}`} target="_blank">
+                          <ExternalLink className="mr-1 h-3 w-3" /> View Member Profile
+                        </Link>
+                      </Button>
+                    </CardFooter>
+                  </Card>
+                ) : (
+                  <Card className="border-dashed p-6 text-center">
+                    <Sparkles className="mx-auto h-8 w-8 text-muted-foreground mb-2" />
+                    <h3 className="text-sm font-semibold text-foreground">Waiting for 1:1 Session to Begin</h3>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Once your Mentor / Team Lead starts your 1:1 session or shares feedback, it will appear here in real time.
+                    </p>
+                  </Card>
+                )}
+
+                {/* ANONYMOUS PEER FEEDBACK RECEIVED (COLLATED BY QUESTION) */}
+                {receivedQuestions.length > 0 && (
+                  <Card className="border border-border bg-card shadow-sm mt-4">
+                    <CardHeader
+                      onClick={() => setShowPeerFeedback(!showPeerFeedback)}
+                      className="p-4 cursor-pointer select-none bg-muted/20 hover:bg-muted/30 transition-colors border-b border-border/40 flex flex-row items-center justify-between"
+                    >
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-2">
+                          <CardTitle className="text-sm font-semibold font-headline flex items-center gap-1.5">
+                            <Layers className="h-3.5 w-3.5 text-primary" />
+                            Collated Peer Feedback Received ({receivedQuestions.length} Questions)
+                          </CardTitle>
+                          <Badge variant="outline" className="text-[10px] font-medium border-emerald-300 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 flex items-center gap-1">
+                            <Lock className="h-2.5 w-2.5" /> 100% Anonymous
+                          </Badge>
+                        </div>
+                        <CardDescription className="text-xs">
+                          All peer reviews for this cycle combined together and grouped by question. Reviewer identities are strictly withheld.
+                        </CardDescription>
+                      </div>
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground shrink-0">
+                        {showPeerFeedback ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                      </Button>
+                    </CardHeader>
+
+                    {showPeerFeedback && (
+                      <CardContent className="p-4 sm:p-6 space-y-5">
+                        <div className="p-3 rounded-lg bg-muted/40 border border-border/50 text-xs text-muted-foreground flex items-center gap-2">
+                          <Lock className="h-4 w-4 text-primary shrink-0" />
+                          <span>
+                            <strong>Anonymous Feedback Policy:</strong> Peer feedback is aggregated question-by-question without reviewer names or identifiable attributes to ensure candid, authentic growth discussions.
+                          </span>
+                        </div>
+
+                        <div className="space-y-4">
+                          {receivedQuestions.map((q) => (
+                            <div key={q.questionId} className="rounded-lg border border-border/70 bg-card p-4 space-y-3">
+                              <div className="flex items-start gap-2.5">
+                                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-bold mt-0.5">
+                                  Q{q.order}
+                                </span>
+                                <div className="space-y-0.5">
+                                  {q.category && (
+                                    <Badge variant="outline" className="text-[10px] uppercase font-semibold tracking-wider text-muted-foreground">
+                                      {q.category}
+                                    </Badge>
+                                  )}
+                                  <h4 className="text-xs font-semibold text-foreground">{q.questionText}</h4>
+                                </div>
+                              </div>
+
+                              {/* Self Answer */}
+                              {q.selfAnswer && (
+                                <div className="pl-8 text-xs p-2.5 rounded bg-emerald-50/20 border border-emerald-200/50 text-foreground">
+                                  <span className="font-semibold text-emerald-800 dark:text-emerald-300 block text-[11px] mb-0.5">
+                                    Your Self-Assessment:
+                                  </span>
+                                  <p className="italic text-foreground/90">&ldquo;{q.selfAnswer}&rdquo;</p>
+                                </div>
+                              )}
+
+                              {/* Anonymous Peer Answers */}
+                              <div className="pl-8 space-y-2 pt-1">
+                                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
+                                  Anonymous Peer Responses ({q.peerAnswers.length})
+                                </span>
+                                <div className="grid gap-2 sm:grid-cols-2">
+                                  {q.peerAnswers.map((peer, pIdx) => (
+                                    <div
+                                      key={pIdx}
+                                      className="p-3 rounded-md border border-border/50 bg-muted/20 space-y-1.5 text-xs"
+                                    >
+                                      <div className="flex items-center justify-between">
+                                        <span className="font-semibold text-foreground text-[11px] flex items-center gap-1.5">
+                                          <Lock className="h-3 w-3 text-muted-foreground" />
+                                          Anonymous Peer #{pIdx + 1}
+                                        </span>
+                                        {peer.sentiment && (
+                                          <Badge
+                                            variant="outline"
+                                            className={`text-[9px] py-0 px-1.5 ${
+                                              peer.sentiment === 'positive'
+                                                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                                                : peer.sentiment === 'constructive'
+                                                ? 'border-blue-200 bg-blue-50 text-blue-700'
+                                                : 'border-slate-200 bg-slate-100 text-slate-700'
+                                            }`}
+                                          >
+                                            {peer.sentiment === 'positive' ? 'Positive' : peer.sentiment === 'constructive' ? 'Growth' : 'Neutral'}
+                                          </Badge>
+                                        )}
+                                      </div>
+                                      <p className="text-muted-foreground italic text-[11px] leading-relaxed">
+                                        &ldquo;{peer.answerText}&rdquo;
+                                      </p>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </CardContent>
+                    )}
+                  </Card>
+                )}
+              </div>
+
+              <Separator className="my-6" />
+
+              {/* Past Review Cycles History Heading */}
+              <div className="space-y-1">
+                <h3 className="text-sm font-bold font-headline text-foreground">
+                  Past Review Cycles & Historical Evaluations
+                </h3>
                 <p className="text-xs text-muted-foreground">
-                  Official evaluations, performance ratings, and peer feedback summaries from previous performance cycles.
+                  Official evaluations, performance ratings, and peer feedback summaries from previous completed review cycles.
                 </p>
               </div>
 
@@ -631,9 +995,15 @@ export default function DashboardPage() {
                           )}
                         </div>
 
-                        <p className="text-xs text-muted-foreground pt-1">
-                          Evaluator: <span className="font-medium text-foreground">{item.reviewer}</span> ({item.reviewerRole}) • Completed on {new Date(item.completedDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
-                        </p>
+                        <div className="flex flex-wrap items-center gap-1.5 pt-1 text-xs text-muted-foreground">
+                          <Lock className="h-3 w-3 text-muted-foreground" />
+                          <span>Evaluator:</span>
+                          <span className="font-medium text-foreground">{item.reviewer.startsWith('Anonymous') ? item.reviewer : 'Anonymous Reviewer'}</span>
+                          <Badge variant="outline" className="text-[10px] py-0 px-1.5 bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300">
+                            Anonymous
+                          </Badge>
+                          <span>• Completed on {new Date(item.completedDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                        </div>
                       </CardHeader>
 
                       <CardContent className="space-y-4 pt-1 pb-4">

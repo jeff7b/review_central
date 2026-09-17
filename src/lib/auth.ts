@@ -1,6 +1,5 @@
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth-options';
-
 import { adminDb } from '@/lib/firebase-admin';
 import type { User } from '@/types';
 

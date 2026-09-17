@@ -224,23 +224,23 @@ export async function getDashboardDataAction(cycleId?: string): Promise<Dashboar
 
     const feedbackHistory: HistoricalEvaluation[] = [];
     if (completedAssignmentsForUserSnap && !completedAssignmentsForUserSnap.empty) {
-      for (const aDoc of completedAssignmentsForUserSnap.docs) {
+      completedAssignmentsForUserSnap.docs.forEach((aDoc, aIdx) => {
         const a = aDoc.data() as PeerReviewAssignment;
         feedbackHistory.push({
           id: `eval-${aDoc.id}`,
-          cycleTitle: selectedCycle ? selectedCycle.name : `Peer Evaluation from ${a.reviewerName}`,
+          cycleTitle: selectedCycle ? selectedCycle.name : `Peer Evaluation #${aIdx + 1}`,
           period: selectedCycle ? `${new Date(selectedCycle.startDate).toLocaleDateString()} – ${new Date(selectedCycle.endDate).toLocaleDateString()}` : 'Review Cycle',
           completedDate: toISOString(a.updatedAt),
           type: '360 Peer Evaluation',
           overallRating: 'Completed',
           ratingTier: 'meets',
-          reviewer: a.reviewerName,
+          reviewer: `Anonymous Reviewer #${aIdx + 1}`,
           reviewerRole: 'Peer Evaluator',
-          summary: `Peer evaluation completed by ${a.reviewerName}.`,
+          summary: `Peer evaluation submitted anonymously.`,
           keyStrengths: ['Teamwork', 'Collaboration'],
           growthAreas: ['Continued Knowledge Sharing'],
         });
-      }
+      });
     }
 
     // Also check dedicated 'evaluations' collection if present

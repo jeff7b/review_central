@@ -6,6 +6,7 @@ export interface User {
   avatarUrl?: string;
   role: 'employee' | 'team_leader' | 'admin';
   mentorId?: string | null;
+  adminReviewerId?: string | null;
 }
 
 
@@ -31,6 +32,8 @@ export interface Review {
   questionnaireId: string;
   questions: Question[];
   answers?: Answer[];
+  reviewCycleId?: string;
+  assignmentId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -85,6 +88,8 @@ export interface ReviewCycle {
   endDate: string; // ISO string format
   participantIds: string[]; // Array of user IDs
   status: 'draft' | 'active' | 'closed';
+  selfReviewQuestionnaireId?: string | null;
+  peerReviewQuestionnaireId?: string | null;
   createdAt: string; // ISO string format
   updatedAt: string; // ISO string format
 }
@@ -133,3 +138,28 @@ export interface QuestionFeedbackCollation {
   peerAnswers: PeerQuestionResponse[];
 }
 
+export interface PersonalNote {
+  id: string;
+  userId?: string;
+  title: string;
+  content: string;
+  category: 'achievement' | 'goal' | 'meeting' | 'reflection';
+  date: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface HistoricalEvaluation {
+  id: string;
+  cycleTitle: string;
+  period: string;
+  completedDate: string;
+  type: string;
+  overallRating?: string;
+  ratingTier?: 'exceeds' | 'meets' | 'high';
+  reviewer: string;
+  reviewerRole: string;
+  summary: string;
+  keyStrengths: string[];
+  growthAreas: string[];
+}

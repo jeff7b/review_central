@@ -26,11 +26,13 @@ import {
   ListFilter,
   Shield,
   ShieldCheck,
+  CheckSquare,
 } from 'lucide-react';
 import type { User, PeerReviewAssignment, Questionnaire, ReviewCycle } from '@/types';
 import { format, parseISO } from 'date-fns';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Table,
   TableBody,
@@ -62,6 +64,7 @@ import { saveAssignmentAction, getAssignmentsByCycleAction, deleteAssignmentActi
 import { useToast } from '@/hooks/use-toast';
 import { getUsersAction } from '../staff/actions';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { BulkEditQuestionnaireDialog } from './bulk-edit-dialog';
 
 function getInitials(name: string): string {
   if (!name) return '??';
@@ -169,7 +172,7 @@ const AssignmentForm = ({
   
   const [reviewee, setReviewee] = useState<User | undefined>(getInitialUser(assignment?.revieweeId || initialRevieweeId));
   const [reviewer, setReviewer] = useState<User | undefined>(getInitialUser(assignment?.reviewerId));
-  const [questionnaireId, setQuestionnaireId] = useState<string | undefined>(assignment?.questionnaireId || questionnaires[0]?.id);
+  const [questionnaireId, setQuestionnaireId] = useState<string | undefined>(assignment?.questionnaireId || cycle.peerReviewQuestionnaireId || questionnaires[0]?.id);
   const [status, setStatus] = useState<PeerReviewAssignment['status']>(assignment?.status || 'pending');
   const [dueDate, setDueDate] = useState<Date | undefined>(assignment ? parseISO(assignment.dueDate) : new Date(cycle.endDate));
   const { toast } = useToast();
@@ -379,19 +382,54 @@ const ReviewerInitialBadge = ({
   );
 };
 
-const AdminShortcutButton = ({
+const MentorShortcutButton = ({
   reviewee,
   adminUsers,
+  usersMap,
   assignmentsForReviewee,
   isSaving,
-  onAssignAdmin,
+  onAssignMentor,
 }: {
   reviewee: User;
   adminUsers: User[];
+  usersMap: Map<string, User>;
   assignmentsForReviewee: PeerReviewAssignment[];
   isSaving: boolean;
-  onAssignAdmin: (reviewee: User, adminUser: User) => void;
+  onAssignMentor: (reviewee: User, mentorUser: User) => void;
 }) => {
+  const mentorId = reviewee.mentorId || (reviewee as any).adminReviewerId;
+  const designatedMentor = mentorId ? usersMap.get(mentorId) : undefined;
+
+  // 1. If designated mentor is defined on the employee
+  if (designatedMentor) {
+    const isAssigned = assignmentsForReviewee.some(a => a.reviewerId === designatedMentor.id);
+    if (isAssigned) {
+      return (
+        <Badge
+          variant="outline"
+          className="border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 text-xs font-normal gap-1 h-7 px-2.5"
+        >
+          <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
+          <span>{designatedMentor.name.split(' ')[0]} (Mentor)</span>
+        </Badge>
+      );
+    }
+    return (
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => onAssignMentor(reviewee, designatedMentor)}
+        disabled={isSaving}
+        className="h-7 text-xs gap-1 border-primary/30 hover:border-primary hover:bg-primary/5 text-primary"
+        title={`Assign ${designatedMentor.name} as mentor reviewer`}
+      >
+        <Shield className="h-3.5 w-3.5" />
+        Set Mentor ({designatedMentor.name.split(' ')[0]})
+      </Button>
+    );
+  }
+
+  // 2. If an admin/mentor is already assigned as a reviewer
   const assignedAdminAssignment = assignmentsForReviewee.find(a =>
     adminUsers.some(adm => adm.id === a.reviewerId)
   );
@@ -404,7 +442,7 @@ const AdminShortcutButton = ({
         className="border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 text-xs font-normal gap-1 h-7 px-2.5"
       >
         <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
-        <span>{adminUser ? `${adminUser.name.split(' ')[0]} (Admin)` : 'Admin Assigned'}</span>
+        <span>{adminUser ? `${adminUser.name.split(' ')[0]} (Mentor)` : 'Mentor Assigned'}</span>
       </Badge>
     );
   }
@@ -420,7 +458,7 @@ const AdminShortcutButton = ({
 
   if (availableAdmins.length === 0) {
     return (
-      <span className="text-xs text-muted-foreground italic px-2">No admin available</span>
+      <span className="text-xs text-muted-foreground italic px-2">No mentor available</span>
     );
   }
 
@@ -430,13 +468,13 @@ const AdminShortcutButton = ({
       <Button
         variant="outline"
         size="sm"
-        onClick={() => onAssignAdmin(reviewee, singleAdmin)}
+        onClick={() => onAssignMentor(reviewee, singleAdmin)}
         disabled={isSaving}
         className="h-7 text-xs gap-1 border-primary/30 hover:border-primary hover:bg-primary/5 text-primary"
-        title={`Assign ${singleAdmin.name} as reviewer`}
+        title={`Assign ${singleAdmin.name} as mentor reviewer`}
       >
         <Shield className="h-3.5 w-3.5" />
-        Set Admin ({singleAdmin.name.split(' ')[0]})
+        Set Mentor ({singleAdmin.name.split(' ')[0]})
       </Button>
     );
   }
@@ -452,17 +490,17 @@ const AdminShortcutButton = ({
           className="h-7 text-xs gap-1 border-primary/30 hover:border-primary hover:bg-primary/5 text-primary"
         >
           <Shield className="h-3.5 w-3.5" />
-          Set Admin
+          Set Mentor
           <ChevronsUpDown className="h-3 w-3 opacity-50 ml-0.5" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="text-xs w-48">
-        <DropdownMenuLabel className="text-xs">Select Admin Reviewer</DropdownMenuLabel>
+        <DropdownMenuLabel className="text-xs">Select Mentor</DropdownMenuLabel>
         <DropdownMenuSeparator />
         {availableAdmins.map(adm => (
           <DropdownMenuItem
             key={adm.id}
-            onClick={() => onAssignAdmin(reviewee, adm)}
+            onClick={() => onAssignMentor(reviewee, adm)}
             className="cursor-pointer"
           >
             <Avatar className="h-4 w-4 mr-2">
@@ -474,6 +512,105 @@ const AdminShortcutButton = ({
         ))}
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+};
+
+const AddReviewerDropdown = ({
+  reviewee,
+  users,
+  cycle,
+  assignmentsForReviewee,
+  isSaving,
+  onAssignReviewer,
+}: {
+  reviewee: User;
+  users: User[];
+  cycle: ReviewCycle;
+  assignmentsForReviewee: PeerReviewAssignment[];
+  isSaving: boolean;
+  onAssignReviewer: (reviewee: User, reviewer: User) => void;
+}) => {
+  const [open, setOpen] = useState(false);
+
+  const assignedReviewerIds = useMemo(
+    () => new Set(assignmentsForReviewee.map(a => a.reviewerId)),
+    [assignmentsForReviewee]
+  );
+
+  const possibleReviewers = useMemo(() => {
+    const participantSet = new Set(cycle.participantIds);
+    return users
+      .filter(u => u.id !== reviewee.id && !assignedReviewerIds.has(u.id))
+      .sort((a, b) => {
+        const aInCycle = participantSet.has(a.id);
+        const bInCycle = participantSet.has(b.id);
+        if (aInCycle && !bInCycle) return -1;
+        if (!aInCycle && bInCycle) return 1;
+        return a.name.localeCompare(b.name);
+      });
+  }, [users, reviewee.id, assignedReviewerIds, cycle.participantIds]);
+
+  if (possibleReviewers.length === 0) {
+    return (
+      <Button
+        variant="ghost"
+        size="sm"
+        disabled
+        className="h-8 text-xs font-medium text-muted-foreground opacity-50 cursor-not-allowed"
+      >
+        <PlusCircle className="h-3.5 w-3.5 mr-1" />
+        No more reviewers
+      </Button>
+    );
+  }
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={isSaving}
+          className="h-8 text-xs font-medium gap-1 text-muted-foreground hover:text-foreground"
+        >
+          <PlusCircle className="h-3.5 w-3.5 text-primary" />
+          Add Reviewer
+          <ChevronsUpDown className="h-3 w-3 opacity-50 ml-0.5" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-64 p-0" align="end">
+        <Command>
+          <CommandInput placeholder="Search reviewer..." />
+          <CommandList>
+            <CommandEmpty>No reviewer found.</CommandEmpty>
+            <CommandGroup heading="Available Reviewers">
+              {possibleReviewers.map((user) => (
+                <CommandItem
+                  key={user.id}
+                  value={user.name}
+                  onSelect={() => {
+                    onAssignReviewer(reviewee, user);
+                    setOpen(false);
+                  }}
+                  className="cursor-pointer py-1.5"
+                >
+                  <Avatar className="h-5 w-5 mr-2 ring-1 ring-border">
+                    <AvatarImage src={user.avatarUrl} alt={user.name} />
+                    <AvatarFallback className="text-[9px] font-medium">{getInitials(user.name)}</AvatarFallback>
+                  </Avatar>
+                  <div className="flex flex-col truncate flex-1 min-w-0">
+                    <span className="font-medium text-foreground text-xs truncate">{user.name}</span>
+                    <span className="text-[10px] text-muted-foreground truncate">
+                      {user.role === 'admin' ? 'Admin' : user.role === 'team_leader' ? 'Team Leader' : user.email || 'Employee'}
+                    </span>
+                  </div>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   );
 };
 
@@ -490,6 +627,8 @@ export default function AdminAssignmentsPage() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingAssignment, setEditingAssignment] = useState<PeerReviewAssignment | undefined>(undefined);
   const [preselectedRevieweeId, setPreselectedRevieweeId] = useState<string | undefined>(undefined);
+  const [selectedAssignmentIds, setSelectedAssignmentIds] = useState<Set<string>>(new Set());
+  const [isBulkEditOpen, setIsBulkEditOpen] = useState(false);
   const { toast } = useToast();
 
   const selectedCycle = useMemo(() => reviewCycles.find(c => c.id === selectedCycleId), [reviewCycles, selectedCycleId]);
@@ -594,6 +733,7 @@ export default function AdminAssignmentsPage() {
 
   useEffect(() => {
     const fetchAssignments = async () => {
+        setSelectedAssignmentIds(new Set());
         if (!selectedCycleId) {
             setAssignments([]);
             return;
@@ -695,29 +835,32 @@ export default function AdminAssignmentsPage() {
     }
   };
 
-  const handleAssignAdmin = async (reviewee: User, adminUser: User) => {
+  const handleAssignReviewer = async (reviewee: User, reviewer: User) => {
     if (!selectedCycle) return;
-    if (reviewee.id === adminUser.id) {
+    if (reviewee.id === reviewer.id) {
       toast({
         variant: "destructive",
         title: "Cannot Assign",
-        description: "An admin cannot be assigned to review themselves.",
+        description: "A user cannot be assigned to review themselves.",
       });
       return;
     }
 
     const alreadyAssigned = assignments.some(
-      a => a.revieweeId === reviewee.id && a.reviewerId === adminUser.id
+      a => a.revieweeId === reviewee.id && a.reviewerId === reviewer.id
     );
     if (alreadyAssigned) {
       toast({
         title: "Already Assigned",
-        description: `${adminUser.name} is already assigned to review ${reviewee.name}.`,
+        description: `${reviewer.name} is already assigned to review ${reviewee.name}.`,
       });
       return;
     }
 
-    const targetQuestionnaire = allQuestionnaires.find(q => q.isActive) || allQuestionnaires[0];
+    const targetQuestionnaire =
+      (selectedCycle.peerReviewQuestionnaireId && allQuestionnaires.find(q => q.id === selectedCycle.peerReviewQuestionnaireId)) ||
+      allQuestionnaires.find(q => q.isActive) ||
+      allQuestionnaires[0];
     if (!targetQuestionnaire) {
       toast({
         variant: "destructive",
@@ -732,27 +875,31 @@ export default function AdminAssignmentsPage() {
       await saveAssignmentAction({
         reviewCycleId: selectedCycle.id,
         reviewee,
-        reviewer: adminUser,
+        reviewer,
         questionnaireId: targetQuestionnaire.id,
         status: 'pending',
         dueDate: selectedCycle.endDate,
       });
       toast({
-        title: "Admin Assigned",
-        description: `${adminUser.name} has been assigned to review ${reviewee.name}.`,
+        title: "Reviewer Assigned",
+        description: `${reviewer.name} has been assigned to review ${reviewee.name}.`,
       });
       const assignmentsData = await getAssignmentsByCycleAction(selectedCycle.id);
       setAssignments(assignmentsData);
     } catch (error) {
-      console.error("Failed to assign admin:", error);
+      console.error("Failed to assign reviewer:", error);
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Could not assign admin as reviewer.",
+        description: "Could not assign reviewer.",
       });
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleAssignMentor = (reviewee: User, mentorUser: User) => {
+    return handleAssignReviewer(reviewee, mentorUser);
   };
 
   const closeForm = () => {
@@ -855,6 +1002,24 @@ export default function AdminAssignmentsPage() {
                       </AlertDialogContent>
                     </AlertDialog>
                   )}
+                  {assignments.length > 0 && selectedCycle && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setIsBulkEditOpen(true)}
+                      disabled={isLoading}
+                      className="border-primary/30 hover:border-primary hover:bg-primary/5 text-primary text-xs h-9 gap-1.5 cursor-pointer shadow-2xs"
+                      title="Bulk update assigned questionnaires"
+                    >
+                      <CheckSquare className="h-3.5 w-3.5" />
+                      <span>Bulk Edit Questionnaire</span>
+                      {selectedAssignmentIds.size > 0 && (
+                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 ml-0.5">
+                          {selectedAssignmentIds.size}
+                        </Badge>
+                      )}
+                    </Button>
+                  )}
                   <Select value={selectedCycleId} onValueChange={setSelectedCycleId} disabled={isLoading}>
                     <SelectTrigger className="w-full sm:w-[250px]">
                       <SelectValue placeholder="Select a review cycle..." />
@@ -925,7 +1090,7 @@ export default function AdminAssignmentsPage() {
                               Reviewers
                             </TableHead>
                             <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground w-[180px]">
-                              Admin Reviewer
+                              Mentor
                             </TableHead>
                             <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground text-right pr-6 w-[150px]">
                               Actions
@@ -982,25 +1147,24 @@ export default function AdminAssignmentsPage() {
                                   )}
                                 </TableCell>
                                 <TableCell>
-                                  <AdminShortcutButton
+                                  <MentorShortcutButton
                                     reviewee={reviewee}
                                     adminUsers={adminUsers}
+                                    usersMap={usersMap}
                                     assignmentsForReviewee={revieweeAssignments}
                                     isSaving={isSaving}
-                                    onAssignAdmin={handleAssignAdmin}
+                                    onAssignMentor={handleAssignMentor}
                                   />
                                 </TableCell>
                                 <TableCell className="text-right pr-6">
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => handleAddNew(reviewee.id)}
-                                    className="h-8 text-xs font-medium text-muted-foreground hover:text-foreground"
-                                    title={`Add a reviewer for ${reviewee.name}`}
-                                  >
-                                    <PlusCircle className="h-3.5 w-3.5 mr-1" />
-                                    Add Reviewer
-                                  </Button>
+                                  <AddReviewerDropdown
+                                    reviewee={reviewee}
+                                    users={users}
+                                    cycle={selectedCycle}
+                                    assignmentsForReviewee={revieweeAssignments}
+                                    isSaving={isSaving}
+                                    onAssignReviewer={handleAssignReviewer}
+                                  />
                                 </TableCell>
                               </TableRow>
                             );
@@ -1164,101 +1328,185 @@ export default function AdminAssignmentsPage() {
                   {/* Tab 3: All Pairings (Original Flat Table) */}
                   <TabsContent value="all-pairings" className="m-0">
                     {assignments.length > 0 ? (
-                      <Table>
-                        <TableHeader>
-                          <TableRow className="bg-muted/40 hover:bg-muted/40">
-                            <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground pl-6">Reviewee</TableHead>
-                            <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Reviewer</TableHead>
-                            <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Questionnaire</TableHead>
-                            <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Due Date</TableHead>
-                            <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground text-center">Status</TableHead>
-                            <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground text-right pr-6">Actions</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {assignments.map((a) => (
-                            <TableRow key={a.id} className="hover:bg-muted/20 transition-colors">
-                              <TableCell className="font-medium flex items-center pl-6">
-                                <Avatar className="h-7 w-7 mr-2.5 ring-1 ring-border">
-                                  <AvatarImage src={a.revieweeAvatarUrl} alt={a.revieweeName} />
-                                  <AvatarFallback className="text-[10px]">{getInitials(a.revieweeName)}</AvatarFallback>
-                                </Avatar>
-                                <span className="text-sm font-medium text-foreground">{a.revieweeName}</span>
-                              </TableCell>
-                              <TableCell>
-                                <div className="flex items-center">
+                      <>
+                        {selectedAssignmentIds.size > 0 && (
+                          <div className="flex flex-wrap items-center justify-between gap-2 px-6 py-2.5 bg-primary/5 border-b border-primary/20 text-xs transition-all">
+                            <div className="flex items-center gap-2">
+                              <Badge variant="default" className="text-xs h-5 px-2">
+                                {selectedAssignmentIds.size} selected
+                              </Badge>
+                              <span className="text-muted-foreground hidden sm:inline">
+                                of {assignments.length} total pairing{assignments.length === 1 ? '' : 's'}
+                              </span>
+                              {selectedAssignmentIds.size < assignments.length && (
+                                <Button
+                                  variant="link"
+                                  size="sm"
+                                  className="h-auto p-0 text-xs text-primary underline cursor-pointer"
+                                  onClick={() => setSelectedAssignmentIds(new Set(assignments.map(a => a.id)))}
+                                >
+                                  Select all {assignments.length}
+                                </Button>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                size="sm"
+                                className="h-7 text-xs font-medium gap-1.5 cursor-pointer"
+                                onClick={() => setIsBulkEditOpen(true)}
+                              >
+                                <CheckSquare className="h-3.5 w-3.5" />
+                                Update Questionnaire
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 text-xs text-muted-foreground hover:text-foreground cursor-pointer"
+                                onClick={() => setSelectedAssignmentIds(new Set())}
+                              >
+                                Clear selection
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                        <Table>
+                          <TableHeader>
+                            <TableRow className="bg-muted/40 hover:bg-muted/40">
+                              <TableHead className="w-[44px] pl-6 pr-0">
+                                <Checkbox
+                                  checked={
+                                    assignments.length > 0 && selectedAssignmentIds.size === assignments.length
+                                      ? true
+                                      : selectedAssignmentIds.size > 0
+                                      ? "indeterminate"
+                                      : false
+                                  }
+                                  onCheckedChange={(checked) => {
+                                    if (checked) {
+                                      setSelectedAssignmentIds(new Set(assignments.map(a => a.id)));
+                                    } else {
+                                      setSelectedAssignmentIds(new Set());
+                                    }
+                                  }}
+                                  aria-label="Select all assignments"
+                                />
+                              </TableHead>
+                              <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground pl-3">Reviewee</TableHead>
+                              <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Reviewer</TableHead>
+                              <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Questionnaire</TableHead>
+                              <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Due Date</TableHead>
+                              <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground text-center">Status</TableHead>
+                              <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground text-right pr-6">Actions</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {assignments.map((a) => (
+                              <TableRow
+                                key={a.id}
+                                className={cn(
+                                  "transition-colors",
+                                  selectedAssignmentIds.has(a.id) ? "bg-muted/40 hover:bg-muted/60" : "hover:bg-muted/20"
+                                )}
+                              >
+                                <TableCell className="w-[44px] pl-6 pr-0">
+                                  <Checkbox
+                                    checked={selectedAssignmentIds.has(a.id)}
+                                    onCheckedChange={(checked) => {
+                                      setSelectedAssignmentIds(prev => {
+                                        const next = new Set(prev);
+                                        if (checked) {
+                                          next.add(a.id);
+                                        } else {
+                                          next.delete(a.id);
+                                        }
+                                        return next;
+                                      });
+                                    }}
+                                    aria-label={`Select assignment for ${a.revieweeName}`}
+                                  />
+                                </TableCell>
+                                <TableCell className="font-medium flex items-center pl-3">
                                   <Avatar className="h-7 w-7 mr-2.5 ring-1 ring-border">
-                                    <AvatarImage src={a.reviewerAvatarUrl} alt={a.reviewerName} />
-                                    <AvatarFallback className="text-[10px]">{getInitials(a.reviewerName)}</AvatarFallback>
+                                    <AvatarImage src={a.revieweeAvatarUrl} alt={a.revieweeName} />
+                                    <AvatarFallback className="text-[10px]">{getInitials(a.revieweeName)}</AvatarFallback>
                                   </Avatar>
-                                  <span className="text-sm text-foreground">{a.reviewerName}</span>
-                                </div>
-                              </TableCell>
-                              <TableCell className="text-xs text-muted-foreground">
-                                {allQuestionnaires.find(q => q.id === a.questionnaireId)?.name || a.questionnaireId}
-                              </TableCell>
-                              <TableCell className="text-xs text-muted-foreground">
-                                {format(parseISO(a.dueDate), "MMM dd, yyyy")}
-                              </TableCell>
-                              <TableCell className="text-center">
-                                {renderAssignmentStatusBadge(a.status)}
-                              </TableCell>
-                              <TableCell className="text-right space-x-1 pr-6">
-                                {a.status === 'completed' && (
+                                  <span className="text-sm font-medium text-foreground">{a.revieweeName}</span>
+                                </TableCell>
+                                <TableCell>
+                                  <div className="flex items-center">
+                                    <Avatar className="h-7 w-7 mr-2.5 ring-1 ring-border">
+                                      <AvatarImage src={a.reviewerAvatarUrl} alt={a.reviewerName} />
+                                      <AvatarFallback className="text-[10px]">{getInitials(a.reviewerName)}</AvatarFallback>
+                                    </Avatar>
+                                    <span className="text-sm text-foreground">{a.reviewerName}</span>
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-xs text-muted-foreground">
+                                  {allQuestionnaires.find(q => q.id === a.questionnaireId)?.name || a.questionnaireId}
+                                </TableCell>
+                                <TableCell className="text-xs text-muted-foreground">
+                                  {format(parseISO(a.dueDate), "MMM dd, yyyy")}
+                                </TableCell>
+                                <TableCell className="text-center">
+                                  {renderAssignmentStatusBadge(a.status)}
+                                </TableCell>
+                                <TableCell className="text-right space-x-1 pr-6">
+                                  {a.status === 'completed' && (
+                                    <AlertDialog>
+                                      <AlertDialogTrigger asChild>
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          title="Clear submitted review so it can be redone"
+                                          className="text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950"
+                                        >
+                                          <RotateCcw className="h-4 w-4" />
+                                        </Button>
+                                      </AlertDialogTrigger>
+                                      <AlertDialogContent>
+                                        <AlertDialogHeader>
+                                          <AlertDialogTitle>Clear Submitted Review?</AlertDialogTitle>
+                                          <AlertDialogDescription>
+                                            Are you sure you want to clear the submitted review by <span className="font-semibold">{a.reviewerName}</span> for <span className="font-semibold">{a.revieweeName}</span>?
+                                            <br /><br />
+                                            This will reset the assignment status to pending and remove any submitted responses so the reviewer can redo their review.
+                                          </AlertDialogDescription>
+                                        </AlertDialogHeader>
+                                        <AlertDialogFooter>
+                                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                          <AlertDialogAction onClick={() => handleClearSubmittedReview(a.id)}>
+                                            Clear Review
+                                          </AlertDialogAction>
+                                        </AlertDialogFooter>
+                                      </AlertDialogContent>
+                                    </AlertDialog>
+                                  )}
+                                  <Button variant="ghost" size="icon" onClick={() => handleEdit(a)} title="Edit">
+                                    <Edit className="h-4 w-4" />
+                                  </Button>
                                   <AlertDialog>
                                     <AlertDialogTrigger asChild>
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        title="Clear submitted review so it can be redone"
-                                        className="text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950"
-                                      >
-                                        <RotateCcw className="h-4 w-4" />
+                                      <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" title="Delete Assignment">
+                                        <Trash2 className="h-3.5 w-3.5" />
                                       </Button>
                                     </AlertDialogTrigger>
                                     <AlertDialogContent>
                                       <AlertDialogHeader>
-                                        <AlertDialogTitle>Clear Submitted Review?</AlertDialogTitle>
-                                        <AlertDialogDescription>
-                                          Are you sure you want to clear the submitted review by <span className="font-semibold">{a.reviewerName}</span> for <span className="font-semibold">{a.revieweeName}</span>?
-                                          <br /><br />
-                                          This will reset the assignment status to pending and remove any submitted responses so the reviewer can redo their review.
-                                        </AlertDialogDescription>
+                                        <AlertDialogTitle>Delete assignment?</AlertDialogTitle>
+                                        <AlertDialogDescription className="text-xs text-muted-foreground">This will permanently delete this review pairing. This action cannot be reversed.</AlertDialogDescription>
                                       </AlertDialogHeader>
                                       <AlertDialogFooter>
-                                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                        <AlertDialogAction onClick={() => handleClearSubmittedReview(a.id)}>
-                                          Clear Review
-                                        </AlertDialogAction>
+                                        <AlertDialogCancel className="text-xs">Cancel</AlertDialogCancel>
+                                        <AlertDialogAction className="text-xs bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => handleDelete(a.id)}>Delete</AlertDialogAction>
                                       </AlertDialogFooter>
                                     </AlertDialogContent>
                                   </AlertDialog>
-                                )}
-                                <Button variant="ghost" size="icon" onClick={() => handleEdit(a)} title="Edit">
-                                  <Edit className="h-4 w-4" />
-                                </Button>
-                                <AlertDialog>
-                                  <AlertDialogTrigger asChild>
-                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" title="Delete Assignment">
-                                      <Trash2 className="h-3.5 w-3.5" />
-                                    </Button>
-                                  </AlertDialogTrigger>
-                                  <AlertDialogContent>
-                                    <AlertDialogHeader>
-                                      <AlertDialogTitle>Delete assignment?</AlertDialogTitle>
-                                      <AlertDialogDescription className="text-xs text-muted-foreground">This will permanently delete this review pairing. This action cannot be reversed.</AlertDialogDescription>
-                                    </AlertDialogHeader>
-                                    <AlertDialogFooter>
-                                      <AlertDialogCancel className="text-xs">Cancel</AlertDialogCancel>
-                                      <AlertDialogAction className="text-xs bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => handleDelete(a.id)}>Delete</AlertDialogAction>
-                                    </AlertDialogFooter>
-                                  </AlertDialogContent>
-                                </AlertDialog>
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </>
                     ) : (
                       <div className="text-center py-12">
                         <UserCheck className="mx-auto h-10 w-10 text-muted-foreground mb-3" />
@@ -1272,6 +1520,22 @@ export default function AdminAssignmentsPage() {
               )}
             </CardContent>
           </Card>
+        )}
+
+        {selectedCycle && (
+          <BulkEditQuestionnaireDialog
+            isOpen={isBulkEditOpen}
+            onClose={() => setIsBulkEditOpen(false)}
+            cycle={selectedCycle}
+            assignments={assignments}
+            selectedAssignmentIds={selectedAssignmentIds}
+            questionnaires={allQuestionnaires}
+            onSuccess={async () => {
+              const assignmentsData = await getAssignmentsByCycleAction(selectedCycle.id);
+              setAssignments(assignmentsData);
+              setSelectedAssignmentIds(new Set());
+            }}
+          />
         )}
       </div>
     </TooltipProvider>

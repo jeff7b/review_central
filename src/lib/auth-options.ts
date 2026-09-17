@@ -34,6 +34,7 @@ if (useStubAuth) {
       name: 'Stubbed Login',
       credentials: {},
       async authorize(_credentials) {
+        console.log('Authenticating with stub user.');
         return {
           id: 'stub-user-id-123',
           name: 'Local Developer',
@@ -72,7 +73,12 @@ export const authOptions: NextAuthOptions = {
                 .where('email', '==', email)
                 .limit(1)
                 .get();
-              token.role = snap.empty ? 'employee' : (snap.docs[0].data().role ?? 'employee');
+              if (!snap.empty) {
+                token.id = snap.docs[0].id;
+                token.role = snap.docs[0].data().role ?? 'employee';
+              } else {
+                token.role = 'employee';
+              }
             } else {
               token.role = 'employee';
             }
@@ -81,8 +87,23 @@ export const authOptions: NextAuthOptions = {
           }
         }
         if (useStubAuth) {
-          token.id = user.id;
-          token.role = 'admin';
+          try {
+            const email = (user.email || '').toLowerCase();
+            const snap = await adminDb.collection('users')
+              .where('email', '==', email)
+              .limit(1)
+              .get();
+            if (!snap.empty) {
+              token.id = snap.docs[0].id;
+              token.role = snap.docs[0].data().role ?? 'admin';
+            } else {
+              token.id = user.id;
+              token.role = 'admin';
+            }
+          } catch {
+            token.id = user.id;
+            token.role = 'admin';
+          }
         }
       }
       return token;

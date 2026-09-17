@@ -37,8 +37,9 @@ const UserForm = ({
   onCancel: () => void,
   isSaving: boolean
 }) => {
+  const initialMentorId = user?.mentorId || (user as any)?.adminReviewerId || null;
   const [formData, setFormData] = useState<Partial<User>>(
-    user ? { ...user } : { name: '', email: '', role: 'employee', mentorId: null }
+    user ? { ...user, mentorId: initialMentorId } : { name: '', email: '', role: 'employee', mentorId: null }
   );
 
   const eligibleMentors = useMemo(() => {
@@ -96,13 +97,13 @@ const UserForm = ({
         </div>
         {formData.role !== 'admin' && (
           <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="mentor" className="text-right">Admin/Mentor</Label>
+            <Label htmlFor="mentor" className="text-right">Mentor</Label>
             <Select 
               value={formData.mentorId || 'none'} 
               onValueChange={(value) => setFormData(p => ({...p, mentorId: value === 'none' ? null : value}))}
             >
               <SelectTrigger id="mentor" className="col-span-3">
-                <SelectValue placeholder="Select an Admin or Mentor" />
+                <SelectValue placeholder="Select a mentor" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">
@@ -293,13 +294,14 @@ export default function AdminStaffPage() {
                   <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground pl-6">Name</TableHead>
                   <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Email</TableHead>
                   <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground text-center">Role</TableHead>
-                  <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Admin / Mentor</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Mentor</TableHead>
                   <TableHead className="text-xs font-semibold uppercase tracking-wider text-muted-foreground text-right pr-6">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {users.map((user) => {
-                  const mentor = user.mentorId ? users.find(u => u.id === user.mentorId) : null;
+                  const mentorId = user.mentorId || (user as any).adminReviewerId;
+                  const mentor = mentorId ? users.find(u => u.id === mentorId) : null;
                   return (
                     <TableRow key={user.id} className="hover:bg-muted/20 transition-colors">
                       <TableCell className="font-medium flex items-center pl-6">

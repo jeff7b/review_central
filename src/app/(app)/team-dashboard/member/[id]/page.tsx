@@ -37,17 +37,27 @@ import {
   Award,
   TrendingUp,
   Calendar,
-  Layers,
   ThumbsUp,
   AlertCircle,
   Lock,
   EyeOff,
   ShieldCheck,
+  Edit3,
+  Undo2,
+  CheckSquare,
+  XSquare,
+  ShieldAlert,
+  Layers,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useLiveMentorFeedback } from '@/hooks/use-live-mentor-feedback';
-import { getMemberFeedbackProfileAction } from './actions';
-import type { QuestionFeedbackCollation, MentorFeedback, MentorFeedbackActionItem } from '@/types';
+import {
+  getMemberFeedbackProfileAction,
+  saveMentorFeedbackAction,
+  togglePeerResponseApprovalAction,
+  savePeerResponseEditAction,
+} from './actions';
+import type { QuestionFeedbackCollation, MentorFeedback, MentorFeedbackActionItem, PeerQuestionResponse } from '@/types';
 
 export default function TeamMemberProfilePage() {
   const params = useParams();
@@ -191,6 +201,135 @@ export default function TeamMemberProfilePage() {
       { growthAreas: (liveFeedback.growthAreas || []).filter((a) => a !== area) },
       true
     );
+  };
+
+  // Toggle single peer response approval
+  const handleToggleResponseApproval = (responseId: string, currentApproved?: boolean) => {
+    const currentApprovedSet = new Set<string>(liveFeedback?.approvedResponseIds || []);
+    if (currentApproved) {
+      currentApprovedSet.delete(responseId);
+    } else {
+      currentApprovedSet.add(responseId);
+    }
+
+    const updatedApproved = Array.from(currentApprovedSet);
+    saveFeedback({ approvedResponseIds: updatedApproved }, true);
+
+    // Update local state in profileData so UI reflects immediately
+    setProfileData((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        collatedQuestions: prev.collatedQuestions.map((q) => ({
+          ...q,
+          peerAnswers: q.peerAnswers.map((p) =>
+            p.id === responseId ? { ...p, isApproved: !currentApproved } : p
+          ),
+          isApprovedForSharing: q.peerAnswers.some((p) =>
+            p.id === responseId ? !currentApproved : p.isApproved
+          ),
+        })),
+      };
+    });
+
+    toast({
+      title: currentApproved ? 'Response Hidden' : 'Response Approved for Employee',
+      description: currentApproved
+        ? 'This peer comment will not be visible on the employee dashboard.'
+        : 'This anonymous peer comment is now approved and visible to the employee.',
+    });
+  };
+
+  // Save mentor inline edit for a peer response
+  const handleSaveResponseEdit = (responseId: string, editedText: string) => {
+    const currentEdits = { ...(liveFeedback?.editedResponses || {}) };
+    if (editedText.trim()) {
+      currentEdits[responseId] = editedText.trim();
+    } else {
+      delete currentEdits[responseId];
+    }
+
+    saveFeedback({ editedResponses: currentEdits }, true);
+
+    // Update local state in profileData so UI reflects immediately
+    setProfileData((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        collatedQuestions: prev.collatedQuestions.map((q) => ({
+          ...q,
+          peerAnswers: q.peerAnswers.map((p) => {
+            if (p.id === responseId) {
+              const orig = p.originalAnswerText || p.answerText;
+              const isEdited = !!editedText.trim() && editedText.trim() !== orig;
+              return {
+                ...p,
+                answerText: editedText.trim() || orig,
+                isEdited,
+              };
+            }
+            return p;
+          }),
+        })),
+      };
+    });
+
+    toast({
+      title: 'Feedback Edited by Mentor',
+      description: 'The updated wording has been saved.',
+    });
+  };
+
+  // Bulk approve all peer responses across all questions
+  const handleApproveAllResponses = () => {
+    if (!profileData) return;
+    const allIds: string[] = [];
+    profileData.collatedQuestions.forEach((q) => {
+      q.peerAnswers.forEach((p) => {
+        if (p.id) allIds.push(p.id);
+      });
+    });
+
+    saveFeedback({ approvedResponseIds: allIds, isPeerFeedbackShared: true }, true);
+
+    setProfileData((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        collatedQuestions: prev.collatedQuestions.map((q) => ({
+          ...q,
+          peerAnswers: q.peerAnswers.map((p) => ({ ...p, isApproved: true })),
+          isApprovedForSharing: true,
+        })),
+      };
+    });
+
+    toast({
+      title: 'All Peer Feedback Approved',
+      description: 'All anonymous peer reviews are now approved and shared with the employee.',
+    });
+  };
+
+  // Bulk revoke all peer responses
+  const handleRevokeAllResponses = () => {
+    saveFeedback({ approvedResponseIds: [], isPeerFeedbackShared: false }, true);
+
+    setProfileData((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        collatedQuestions: prev.collatedQuestions.map((q) => ({
+          ...q,
+          peerAnswers: q.peerAnswers.map((p) => ({ ...p, isApproved: false })),
+          isApprovedForSharing: false,
+        })),
+      };
+    });
+
+    toast({
+      title: 'Peer Feedback Approvals Revoked',
+      description: 'Peer feedback is now hidden from the employee screen.',
+    });
   };
 
   // Toggle question expanded state
@@ -684,6 +823,8 @@ export default function TeamMemberProfilePage() {
                   onToggle={() => toggleQuestion(q.questionId)}
                   employeeName={employee.name}
                   isAnonymized={isAnonymized}
+                  onToggleApproval={handleToggleResponseApproval}
+                  onSaveEdit={handleSaveResponseEdit}
                 />
               ))}
             </div>
@@ -733,6 +874,55 @@ export default function TeamMemberProfilePage() {
 
           {/* TAB 1: Collated Feedback Grouped by Question */}
           <TabsContent value="collated-questions" className="space-y-4 mt-4">
+            {/* Approval & Sharing Controls Banner */}
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-primary/5 border border-primary/20 p-3.5 rounded-lg">
+              <div className="flex items-center gap-3">
+                <div className={`h-8 w-8 rounded-full flex items-center justify-center shrink-0 ${
+                  liveFeedback?.isPeerFeedbackShared ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'
+                }`}>
+                  {liveFeedback?.isPeerFeedbackShared ? <ShieldCheck className="h-4 w-4" /> : <Lock className="h-4 w-4" />}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-foreground">
+                      Anonymous Peer Feedback Sharing Status:
+                    </span>
+                    <Badge variant="outline" className={`text-[10px] font-semibold ${
+                      liveFeedback?.isPeerFeedbackShared
+                        ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
+                        : 'border-amber-300 bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300'
+                    }`}>
+                      {liveFeedback?.isPeerFeedbackShared ? 'Sharing Active for Employee' : 'Pending Mentor Approval (Hidden from Employee)'}
+                    </Badge>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    {(liveFeedback?.approvedResponseIds || []).length} of {totalPeerAnswers} peer responses approved for employee viewing. You can edit any wording before approving.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 text-xs font-medium border-emerald-300 hover:bg-emerald-50 text-emerald-800 dark:text-emerald-300"
+                  onClick={handleApproveAllResponses}
+                >
+                  <CheckSquare className="mr-1.5 h-3.5 w-3.5 text-emerald-600" />
+                  Approve All for Employee
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 text-xs font-medium text-muted-foreground hover:text-destructive"
+                  onClick={handleRevokeAllResponses}
+                >
+                  <XSquare className="mr-1.5 h-3.5 w-3.5" />
+                  Revoke All
+                </Button>
+              </div>
+            </div>
+
             {/* Header info & Filter toolbar */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-card p-3 rounded-lg border border-border">
               <div className="space-y-0.5">
@@ -781,6 +971,8 @@ export default function TeamMemberProfilePage() {
                     onToggle={() => toggleQuestion(q.questionId)}
                     employeeName={employee.name}
                     isAnonymized={isAnonymized}
+                    onToggleApproval={handleToggleResponseApproval}
+                    onSaveEdit={handleSaveResponseEdit}
                   />
                 ))
               ) : (
@@ -940,6 +1132,7 @@ export default function TeamMemberProfilePage() {
 /**
  * Component representing a single Question in the Collation view,
  * containing both the Self-Review answer and all Peer Review answers side-by-side.
+ * Also empowers the Mentor to toggle approval and edit peer responses prior to sharing with the employee.
  */
 function QuestionCollationCard({
   question,
@@ -947,13 +1140,50 @@ function QuestionCollationCard({
   onToggle,
   employeeName,
   isAnonymized = true,
+  onToggleApproval,
+  onSaveEdit,
 }: {
   question: QuestionFeedbackCollation;
   isExpanded: boolean;
   onToggle: () => void;
   employeeName: string;
   isAnonymized?: boolean;
+  onToggleApproval?: (responseId: string, currentApproved?: boolean) => void;
+  onSaveEdit?: (responseId: string, editedText: string) => void;
 }) {
+  const [editingResponseId, setEditingResponseId] = useState<string | null>(null);
+  const [draftEditText, setDraftEditText] = useState('');
+  const [showOriginalMap, setShowOriginalMap] = useState<Record<string, boolean>>({});
+
+  const handleStartEdit = (peer: PeerQuestionResponse, fallbackId: string) => {
+    setEditingResponseId(peer.id || fallbackId);
+    setDraftEditText(peer.answerText);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingResponseId(null);
+    setDraftEditText('');
+  };
+
+  const handleSaveInlineEdit = (responseId: string) => {
+    if (onSaveEdit) {
+      onSaveEdit(responseId, draftEditText);
+    }
+    setEditingResponseId(null);
+  };
+
+  const handleResetToOriginal = (peer: PeerQuestionResponse, fallbackId: string) => {
+    const id = peer.id || fallbackId;
+    if (onSaveEdit && peer.originalAnswerText) {
+      onSaveEdit(id, peer.originalAnswerText);
+    }
+    setEditingResponseId(null);
+  };
+
+  const toggleShowOriginal = (responseId: string) => {
+    setShowOriginalMap((prev) => ({ ...prev, [responseId]: !prev[responseId] }));
+  };
+
   return (
     <Card className="border border-border bg-card shadow-sm hover:border-border/80 transition-all overflow-hidden">
       {/* Question Card Header (Clickable to expand/collapse) */}
@@ -984,6 +1214,16 @@ function QuestionCollationCard({
                 {question.selfAnswer && (
                   <Badge variant="outline" className="text-[10px] border-emerald-200 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 font-medium">
                     Self Assessment Included
+                  </Badge>
+                )}
+                {/* Status indicator for approvals on this question */}
+                {question.peerAnswers.some((p) => p.isApproved) ? (
+                  <Badge variant="outline" className="text-[10px] border-emerald-200 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 font-medium">
+                    <CheckCircle2 className="mr-1 h-2.5 w-2.5" /> Approved for Employee
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="text-[10px] border-amber-300 bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 font-medium">
+                    Draft / Hidden
                   </Badge>
                 )}
               </div>
@@ -1048,67 +1288,184 @@ function QuestionCollationCard({
 
             <div className="grid gap-3 sm:grid-cols-1 md:grid-cols-2">
               {question.peerAnswers.map((peer, idx) => {
+                const responseId = peer.id || `${question.questionId}-${idx}`;
                 const peerDisplayName = isAnonymized ? `Anonymous Peer #${idx + 1}` : peer.reviewerName;
                 const peerDisplayRole = isAnonymized ? 'Verified Peer Reviewer' : peer.reviewerRole;
+                const isApproved = !!peer.isApproved;
+                const isEditing = editingResponseId === responseId;
 
                 return (
                   <div
-                    key={idx}
-                    className="rounded-lg border border-border/70 bg-card p-3.5 space-y-2.5 flex flex-col justify-between hover:border-border transition-colors shadow-2xs"
+                    key={responseId}
+                    className={`rounded-lg border p-3.5 space-y-3 flex flex-col justify-between transition-colors shadow-2xs ${
+                      isApproved
+                        ? 'border-emerald-200/80 bg-emerald-50/10 dark:bg-emerald-950/10'
+                        : 'border-border/70 bg-card hover:border-border'
+                    }`}
                   >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <Avatar className="h-6 w-6 ring-1 ring-border">
-                          {!isAnonymized && <AvatarImage src={peer.reviewerAvatarUrl} alt={peer.reviewerName} />}
-                          <AvatarFallback className="text-[10px] font-semibold bg-muted text-muted-foreground">
-                            {isAnonymized ? <Lock className="h-2.5 w-2.5" /> : peer.reviewerName.split(' ').map((n) => n[0]).join('')}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <span className="text-xs font-semibold text-foreground flex items-center gap-1 leading-tight">
-                            {peerDisplayName}
-                            {isAnonymized && (
-                              <Badge variant="outline" className="text-[9px] py-0 px-1 font-normal text-muted-foreground">
-                                Anonymous
-                              </Badge>
+                    <div>
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <div className="flex items-center gap-2">
+                          <Avatar className="h-6 w-6 ring-1 ring-border">
+                            {!isAnonymized && <AvatarImage src={peer.reviewerAvatarUrl} alt={peer.reviewerName} />}
+                            <AvatarFallback className="text-[10px] font-semibold bg-muted text-muted-foreground">
+                              {isAnonymized ? <Lock className="h-2.5 w-2.5" /> : peer.reviewerName.split(' ').map((n) => n[0]).join('')}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <span className="text-xs font-semibold text-foreground flex items-center gap-1 leading-tight">
+                              {peerDisplayName}
+                              {isAnonymized && (
+                                <Badge variant="outline" className="text-[9px] py-0 px-1 font-normal text-muted-foreground">
+                                  Anonymous
+                                </Badge>
+                              )}
+                            </span>
+                            {peerDisplayRole && (
+                              <span className="text-[10px] text-muted-foreground block">{peerDisplayRole}</span>
                             )}
-                          </span>
-                          {peerDisplayRole && (
-                            <span className="text-[10px] text-muted-foreground block">{peerDisplayRole}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5">
+                          {peer.isEdited && (
+                            <Badge variant="outline" className="text-[9px] font-medium border-blue-300 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
+                              Edited by Mentor
+                            </Badge>
+                          )}
+                          {peer.sentiment && (
+                            <Badge
+                              variant="outline"
+                              className={`text-[10px] font-normal py-0 px-1.5 ${
+                                peer.sentiment === 'positive'
+                                  ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
+                                  : peer.sentiment === 'constructive'
+                                  ? 'border-blue-200 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300'
+                                  : 'border-slate-200 bg-slate-100 text-slate-700 dark:bg-slate-800'
+                              }`}
+                            >
+                              {peer.sentiment === 'positive' ? 'Positive' : peer.sentiment === 'constructive' ? 'Growth' : 'Neutral'}
+                            </Badge>
                           )}
                         </div>
                       </div>
 
-                      {peer.sentiment && (
-                        <Badge
-                          variant="outline"
-                          className={`text-[10px] font-normal py-0 px-1.5 ${
-                            peer.sentiment === 'positive'
-                              ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
-                            : peer.sentiment === 'constructive'
-                            ? 'border-blue-200 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300'
-                            : 'border-slate-200 bg-slate-100 text-slate-700 dark:bg-slate-800'
-                        }`}
-                      >
-                        {peer.sentiment === 'positive' ? 'Positive' : peer.sentiment === 'constructive' ? 'Growth' : 'Neutral'}
-                      </Badge>
-                    )}
-                  </div>
-
-                  <p className="text-xs text-foreground/90 leading-relaxed italic bg-muted/20 p-2.5 rounded border border-border/40">
-                    &ldquo;{peer.answerText}&rdquo;
-                  </p>
-
-                  {peer.submittedAt && (
-                    <div className="flex justify-end">
-                      <span className="text-[10px] text-muted-foreground">
-                        Recorded on {new Date(peer.submittedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                      </span>
+                      {/* Content or Edit Textarea */}
+                      {isEditing ? (
+                        <div className="space-y-2 mt-2">
+                          <label className="text-[11px] font-semibold text-foreground flex items-center gap-1">
+                            <Edit3 className="h-3 w-3 text-primary" /> Edit Peer Text before sharing with employee:
+                          </label>
+                          <Textarea
+                            value={draftEditText}
+                            onChange={(e) => setDraftEditText(e.target.value)}
+                            className="text-xs min-h-[90px] bg-background"
+                            placeholder="Adjust tone, clarify points, or sanitize specifics..."
+                          />
+                          <div className="flex items-center justify-between pt-1">
+                            {peer.isEdited && peer.originalAnswerText && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 text-[11px] text-muted-foreground hover:text-foreground px-2"
+                                onClick={() => handleResetToOriginal(peer, responseId)}
+                              >
+                                <Undo2 className="mr-1 h-3 w-3" /> Reset to Original
+                              </Button>
+                            )}
+                            <div className="flex items-center gap-1.5 ml-auto">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-xs px-2"
+                                onClick={handleCancelEdit}
+                              >
+                                Cancel
+                              </Button>
+                              <Button
+                                size="sm"
+                                className="h-7 text-xs px-3"
+                                onClick={() => handleSaveInlineEdit(responseId)}
+                              >
+                                Save Edit
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-1.5">
+                          <p className="text-xs text-foreground/90 leading-relaxed italic bg-muted/20 p-2.5 rounded border border-border/40">
+                            &ldquo;{peer.answerText}&rdquo;
+                          </p>
+                          {peer.isEdited && peer.originalAnswerText && (
+                            <div>
+                              <button
+                                type="button"
+                                onClick={() => toggleShowOriginal(responseId)}
+                                className="text-[10px] text-primary hover:underline flex items-center gap-1 font-medium"
+                              >
+                                {showOriginalMap[responseId] ? 'Hide original wording' : 'View original peer phrasing'}
+                              </button>
+                              {showOriginalMap[responseId] && (
+                                <div className="mt-1 p-2 rounded bg-muted/40 border border-border/40 text-[11px] text-muted-foreground italic">
+                                  <span className="font-semibold text-[10px] not-italic block text-foreground mb-0.5">Original Peer Submission:</span>
+                                  &ldquo;{peer.originalAnswerText}&rdquo;
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              );
-            })}
+
+                    {/* Footer Actions: Approval Toggle and Edit Button */}
+                    <div className="pt-2 border-t border-border/40 flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5">
+                        {onToggleApproval && (
+                          <Button
+                            size="sm"
+                            variant={isApproved ? 'default' : 'outline'}
+                            className={`h-7 text-xs px-2.5 font-medium ${
+                              isApproved
+                                ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                                : 'border-amber-300 text-amber-800 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-300'
+                            }`}
+                            onClick={() => onToggleApproval(responseId, isApproved)}
+                          >
+                            {isApproved ? (
+                              <>
+                                <CheckSquare className="mr-1 h-3 w-3" />
+                                Approved for Employee
+                              </>
+                            ) : (
+                              <>
+                                <EyeOff className="mr-1 h-3 w-3" />
+                                Hidden (Approve to Share)
+                              </>
+                            )}
+                          </Button>
+                        )}
+                        {!isEditing && onSaveEdit && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 text-xs px-2 text-muted-foreground hover:text-foreground"
+                            onClick={() => handleStartEdit(peer, responseId)}
+                          >
+                            <Edit3 className="mr-1 h-3 w-3" /> Edit
+                          </Button>
+                        )}
+                      </div>
+
+                      {peer.submittedAt && (
+                        <span className="text-[10px] text-muted-foreground">
+                          {new Date(peer.submittedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </CardContent>

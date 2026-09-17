@@ -113,17 +113,24 @@ export interface MentorFeedback {
   strengths: string[];
   growthAreas: string[];
   actionItems: MentorFeedbackActionItem[];
-  isShared: boolean;
+  isShared: boolean; // Master toggle for shared 1:1 notes
+  isPeerFeedbackShared?: boolean; // Master toggle for sharing anonymous peer reviews with the employee
+  approvedResponseIds?: string[]; // IDs of approved peer responses
+  editedResponses?: Record<string, string>; // Map of responseId -> mentor-edited text
   lastUpdated: string;
   status: 'draft' | 'in_meeting' | 'finalized';
 }
 
 export interface PeerQuestionResponse {
+  id?: string; // Unique identifier for response tracking and editing (generated or persisted)
   reviewerId: string;
   reviewerName: string;
   reviewerAvatarUrl?: string;
   reviewerRole?: string;
-  answerText: string;
+  answerText: string; // Effective answer text (mentor edited if available, else original)
+  originalAnswerText?: string; // Original peer submission text
+  isEdited?: boolean;
+  isApproved?: boolean; // Approved by mentor to be shared with employee
   sentiment?: 'positive' | 'neutral' | 'constructive';
   submittedAt?: string;
 }
@@ -136,6 +143,7 @@ export interface QuestionFeedbackCollation {
   selfAnswer?: string;
   selfAnswerSubmittedAt?: string;
   peerAnswers: PeerQuestionResponse[];
+  isApprovedForSharing?: boolean; // Convenience flag indicating whether any answers are approved
 }
 
 export interface PersonalNote {

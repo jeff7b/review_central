@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/select";
 import {
   CheckCircle,
+  CheckCircle2,
   Edit3,
   FileText,
   Users,
@@ -205,23 +206,58 @@ export default function DashboardPage() {
     saveMentorFeedbackFromEmployee({ actionItems: updated }, true);
   };
 
-  // Collated peer feedback received (strictly anonymous)
-  const [receivedQuestions, setReceivedQuestions] = useState<QuestionFeedbackCollation[]>([]);
+  // Collated peer feedback received (strictly anonymous, only approved answers)
+  const [rawCollatedQuestions, setRawCollatedQuestions] = useState<QuestionFeedbackCollation[]>([]);
   const [showPeerFeedback, setShowPeerFeedback] = useState(false);
 
   useEffect(() => {
     async function loadReceivedPeerFeedback() {
       try {
-        const data = await getMemberFeedbackProfileAction(activeEmployeeId);
+        const data = await getMemberFeedbackProfileAction(activeEmployeeId, selectedCycleId);
         if (data?.collatedQuestions) {
-          setReceivedQuestions(data.collatedQuestions);
+          setRawCollatedQuestions(data.collatedQuestions);
         }
       } catch (err) {
         console.error('Failed to load received feedback questions:', err);
       }
     }
-    loadReceivedPeerFeedback();
-  }, [activeEmployeeId]);
+    if (activeEmployeeId) {
+      loadReceivedPeerFeedback();
+    }
+  }, [activeEmployeeId, selectedCycleId]);
+
+  // Filter collated questions to ONLY include mentor-approved responses and apply live mentor edits
+  const receivedQuestions = useMemo<QuestionFeedbackCollation[]>(() => {
+    // If master peer feedback sharing is disabled, or no approved responses exist, return empty
+    if (!liveMentorFeedback?.isPeerFeedbackShared && (liveMentorFeedback?.approvedResponseIds || []).length === 0) {
+      return [];
+    }
+
+    const approvedIds = new Set<string>(liveMentorFeedback?.approvedResponseIds || []);
+    const editedMap = liveMentorFeedback?.editedResponses || {};
+
+    return rawCollatedQuestions
+      .map((q) => {
+        const approvedPeerAnswers = q.peerAnswers
+          .filter((p) => p.id && approvedIds.has(p.id))
+          .map((p) => {
+            const respId = p.id || '';
+            const editedText = respId ? editedMap[respId] : undefined;
+            return {
+              ...p,
+              answerText: editedText || p.answerText,
+              isEdited: !!editedText && editedText !== p.originalAnswerText,
+            };
+          });
+
+        return {
+          ...q,
+          peerAnswers: approvedPeerAnswers,
+          isApprovedForSharing: approvedPeerAnswers.length > 0,
+        };
+      })
+      .filter((q) => q.peerAnswers.length > 0);
+  }, [rawCollatedQuestions, liveMentorFeedback?.isPeerFeedbackShared, liveMentorFeedback?.approvedResponseIds, liveMentorFeedback?.editedResponses]);
 
   // Notes state
   const [noteSearch, setNoteSearch] = useState('');
@@ -242,6 +278,9 @@ export default function DashboardPage() {
       setFeedbackHistory(data.feedbackHistory);
       setReviewCycles(data.reviewCycles);
       setSelectedCycleId(data.selectedCycleId);
+      if (data.currentUser?.id) {
+        setActiveEmployeeId(data.currentUser.id);
+      }
     } catch (error) {
       console.error('Failed to load dashboard data:', error);
       toast({
@@ -840,7 +879,7 @@ export default function DashboardPage() {
                 )}
 
                 {/* ANONYMOUS PEER FEEDBACK RECEIVED (COLLATED BY QUESTION) */}
-                {receivedQuestions.length > 0 && (
+                {receivedQuestions.length > 0 ? (
                   <Card className="border border-border bg-card shadow-sm mt-4">
                     <CardHeader
                       onClick={() => setShowPeerFeedback(!showPeerFeedback)}
@@ -850,14 +889,17 @@ export default function DashboardPage() {
                         <div className="flex items-center gap-2">
                           <CardTitle className="text-sm font-semibold font-headline flex items-center gap-1.5">
                             <Layers className="h-3.5 w-3.5 text-primary" />
-                            Collated Peer Feedback Received ({receivedQuestions.length} Questions)
+                            Collated Peer Feedback Received ({receivedQuestions.length} Question{receivedQuestions.length !== 1 ? 's' : ''})
                           </CardTitle>
                           <Badge variant="outline" className="text-[10px] font-medium border-emerald-300 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 flex items-center gap-1">
                             <Lock className="h-2.5 w-2.5" /> 100% Anonymous
                           </Badge>
+                          <Badge variant="outline" className="text-[10px] font-medium border-primary/30 bg-primary/5 text-primary flex items-center gap-1">
+                            <CheckCircle2 className="h-2.5 w-2.5 text-primary" /> Mentor Approved
+                          </Badge>
                         </div>
                         <CardDescription className="text-xs">
-                          All peer reviews for this cycle combined together and grouped by question. Reviewer identities are strictly withheld.
+                          Anonymous peer feedback curated and approved by your mentor for this cycle, grouped by question.
                         </CardDescription>
                       </div>
                       <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground shrink-0">
@@ -870,7 +912,7 @@ export default function DashboardPage() {
                         <div className="p-3 rounded-lg bg-muted/40 border border-border/50 text-xs text-muted-foreground flex items-center gap-2">
                           <Lock className="h-4 w-4 text-primary shrink-0" />
                           <span>
-                            <strong>Anonymous Feedback Policy:</strong> Peer feedback is aggregated question-by-question without reviewer names or identifiable attributes to ensure candid, authentic growth discussions.
+                            <strong>Anonymous Feedback Policy:</strong> Peer feedback is aggregated question-by-question without reviewer names or identifiable attributes to ensure candid, authentic growth discussions. Only mentor-approved feedback is visible.
                           </span>
                         </div>
 
@@ -909,14 +951,21 @@ export default function DashboardPage() {
                                 <div className="grid gap-2 sm:grid-cols-2">
                                   {q.peerAnswers.map((peer, pIdx) => (
                                     <div
-                                      key={pIdx}
+                                      key={peer.id || pIdx}
                                       className="p-3 rounded-md border border-border/50 bg-muted/20 space-y-1.5 text-xs"
                                     >
                                       <div className="flex items-center justify-between">
-                                        <span className="font-semibold text-foreground text-[11px] flex items-center gap-1.5">
-                                          <Lock className="h-3 w-3 text-muted-foreground" />
-                                          Anonymous Peer #{pIdx + 1}
-                                        </span>
+                                        <div className="flex items-center gap-1.5">
+                                          <span className="font-semibold text-foreground text-[11px] flex items-center gap-1.5">
+                                            <Lock className="h-3 w-3 text-muted-foreground" />
+                                            Anonymous Peer #{pIdx + 1}
+                                          </span>
+                                          {peer.isEdited && (
+                                            <Badge variant="outline" className="text-[9px] py-0 px-1 border-blue-200 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
+                                              Edited by Mentor
+                                            </Badge>
+                                          )}
+                                        </div>
                                         {peer.sentiment && (
                                           <Badge
                                             variant="outline"
@@ -944,6 +993,14 @@ export default function DashboardPage() {
                         </div>
                       </CardContent>
                     )}
+                  </Card>
+                ) : (
+                  <Card className="border-dashed p-5 text-center mt-4 bg-muted/10">
+                    <Lock className="mx-auto h-7 w-7 text-muted-foreground mb-2" />
+                    <h3 className="text-xs font-semibold text-foreground">Peer Feedback Under Mentor Review</h3>
+                    <p className="text-[11px] text-muted-foreground mt-1 max-w-md mx-auto">
+                      Anonymous peer reviews for this cycle are currently being curated and approved by your mentor. Approved feedback will appear here once released.
+                    </p>
                   </Card>
                 )}
               </div>

@@ -1,5 +1,28 @@
 import { adminDb } from './firebase-admin';
-import type { MentorFeedback, QuestionFeedbackCollation, User } from '@/types';
+import type {
+  MentorFeedback,
+  QuestionFeedbackCollation,
+  PeerQuestionResponse,
+  User,
+  Review,
+  PeerReviewAssignment,
+  Questionnaire,
+  Question,
+} from '@/types';
+
+function toISOString(val: unknown): string {
+  if (!val) return new Date().toISOString();
+  if (typeof (val as any).toDate === 'function') {
+    return (val as any).toDate().toISOString();
+  }
+  if (val instanceof Date) {
+    return val.toISOString();
+  }
+  if (typeof val === 'string') {
+    return val;
+  }
+  return new Date(val as any).toISOString();
+}
 
 // In-memory store fallback for development / offline environments
 const inMemoryMentorFeedback = new Map<string, MentorFeedback>();
@@ -308,108 +331,288 @@ const mockCollatedDataByEmployeeId: Record<string, {
 
 /**
  * Retrieves the member profile and collated feedback grouped by question.
+ * Dynamically queries Firestore peer-reviews, peer-review-assignments, self-reviews,
+ * and questionnaires, and overlays mentor approvals and inline edits.
  */
-export async function getMemberFeedbackProfile(employeeId: string) {
-  // Check if we have pre-configured collated data
-  const mockData = mockCollatedDataByEmployeeId[employeeId];
-  if (mockData) {
-    // Get live feedback if available
-    const liveFeedback = await getMentorFeedback(employeeId);
-    return {
-      employee: mockData.employee,
-      collatedQuestions: mockData.collatedQuestions,
-      mentorFeedback: liveFeedback || mockData.initialFeedback,
-    };
-  }
-
-  // Fallback for other user IDs (e.g. users created via Admin Staff or custom IDs)
+export async function getMemberFeedbackProfile(employeeId: string, cycleId?: string) {
+  // 1. Fetch user profile from Firestore
   let employeeName = `Team Member (${employeeId})`;
   let employeeEmail = `${employeeId}@example.com`;
   let employeeAvatar = `https://placehold.co/100x100.png?text=${employeeId.slice(0, 2).toUpperCase()}`;
+  let mentorName = 'Team Lead / Mentor';
+  let mentorRole = 'Engineering Manager';
 
   try {
     const userDoc = await adminDb.collection('users').doc(employeeId).get();
     if (userDoc.exists) {
       const data = userDoc.data() as User;
-      employeeName = data.name;
-      employeeEmail = data.email;
+      employeeName = data.name || employeeName;
+      employeeEmail = data.email || employeeEmail;
       employeeAvatar = data.avatarUrl || employeeAvatar;
+
+      if (data.mentorId) {
+        const mentorDoc = await adminDb.collection('users').doc(data.mentorId).get().catch(() => null);
+        if (mentorDoc && mentorDoc.exists) {
+          const mData = mentorDoc.data() as User;
+          mentorName = mData.name || mentorName;
+          mentorRole = mData.role === 'admin' ? 'Administrator / Lead' : 'Team Lead / Mentor';
+        }
+      }
     }
   } catch (err) {
-    console.warn(`Firestore user lookup failed for ${employeeId}, using fallback:`, err);
+    console.warn(`Firestore user lookup failed for ${employeeId}:`, err);
   }
 
+  // 2. Fetch live MentorFeedback state
   const liveFeedback = await getMentorFeedback(employeeId);
+  const approvedIdsSet = new Set<string>(liveFeedback?.approvedResponseIds || []);
+  const editedMap = liveFeedback?.editedResponses || {};
+
+  // 3. Attempt to fetch real reviews from Firestore
+  let realCollatedQuestions: QuestionFeedbackCollation[] = [];
+
+  try {
+    // 3a. Fetch self review
+    let selfReviewQuery = adminDb.collection('reviews')
+      .where('type', '==', 'self')
+      .where('revieweeId', '==', employeeId);
+
+    if (cycleId) {
+      selfReviewQuery = selfReviewQuery.where('reviewCycleId', '==', cycleId);
+    }
+
+    const selfSnap = await selfReviewQuery.limit(1).get().catch(() => null);
+    let selfAnswersMap: Record<string, { answerText: string; submittedAt?: string }> = {};
+
+    if (selfSnap && !selfSnap.empty) {
+      const sDoc = selfSnap.docs[0].data();
+      const sAnswers = sDoc.answers || [];
+      const sSubmittedAt = toISOString(sDoc.updatedAt || sDoc.createdAt);
+      sAnswers.forEach((a: any) => {
+        if (a.questionId) {
+          selfAnswersMap[a.questionId] = {
+            answerText: a.answerText || '',
+            submittedAt: sSubmittedAt,
+          };
+        }
+      });
+    }
+
+    // 3b. Fetch completed peer review assignments where user is reviewee
+    let peerReceivedQuery = adminDb.collection('peer-review-assignments')
+      .where('revieweeId', '==', employeeId);
+
+    if (cycleId) {
+      peerReceivedQuery = peerReceivedQuery.where('reviewCycleId', '==', cycleId);
+    }
+
+    const peerAssignmentsSnap = await peerReceivedQuery.get().catch(() => null);
+
+    // Map to collect questions: questionId -> QuestionFeedbackCollation
+    const questionMap = new Map<string, QuestionFeedbackCollation>();
+
+    if (peerAssignmentsSnap && !peerAssignmentsSnap.empty) {
+      // Collect questionnaire templates to ensure questions are properly named & ordered
+      const questionnaireCache = new Map<string, Questionnaire>();
+
+      for (const aDoc of peerAssignmentsSnap.docs) {
+        const assignment = aDoc.data() as PeerReviewAssignment;
+        if (assignment.status !== 'completed' || !assignment.reviewId) continue;
+
+        // Fetch actual peer review document
+        const pReviewDoc = await adminDb.collection('peer-reviews').doc(assignment.reviewId).get().catch(() => null);
+        if (!pReviewDoc || !pReviewDoc.exists) continue;
+
+        const pReviewData = pReviewDoc.data()!;
+        const answers: Array<{ questionId: string; answerText: string }> = pReviewData.answers || [];
+        const submittedAt = toISOString(pReviewData.updatedAt || pReviewData.createdAt || assignment.updatedAt);
+
+        // Fetch questionnaire if not cached
+        const qId = assignment.questionnaireId || pReviewData.questionnaireId;
+        if (qId && !questionnaireCache.has(qId)) {
+          const qDoc = await adminDb.collection('questionnaires').doc(qId).get().catch(() => null);
+          if (qDoc && qDoc.exists) {
+            questionnaireCache.set(qId, { id: qDoc.id, ...qDoc.data() } as Questionnaire);
+          }
+        }
+
+        const questionnaire = qId ? questionnaireCache.get(qId) : null;
+
+        // Process answers in this peer review
+        answers.forEach((ans, idx) => {
+          if (!ans.questionId) return;
+
+          let qObj = questionMap.get(ans.questionId);
+          if (!qObj) {
+            const templateQ = questionnaire?.questions?.find((q) => q.id === ans.questionId);
+            const questionText = templateQ?.text || `Evaluation Question #${idx + 1}`;
+            const questionOrder = templateQ?.order ?? (questionMap.size + 1);
+
+            const selfInfo = selfAnswersMap[ans.questionId];
+
+            qObj = {
+              questionId: ans.questionId,
+              questionText,
+              order: questionOrder,
+              category: (templateQ as any)?.category || undefined,
+              selfAnswer: selfInfo?.answerText,
+              selfAnswerSubmittedAt: selfInfo?.submittedAt,
+              peerAnswers: [],
+            };
+            questionMap.set(ans.questionId, qObj);
+          }
+
+          const responseId = `resp-${aDoc.id}-${ans.questionId}`;
+          const originalText = ans.answerText || '';
+          const editedText = editedMap[responseId];
+          const isApproved = approvedIdsSet.has(responseId);
+
+          qObj.peerAnswers.push({
+            id: responseId,
+            reviewerId: assignment.reviewerId,
+            reviewerName: assignment.reviewerName || 'Peer Reviewer',
+            reviewerAvatarUrl: assignment.reviewerAvatarUrl,
+            reviewerRole: 'Peer Reviewer',
+            answerText: editedText !== undefined ? editedText : originalText,
+            originalAnswerText: originalText,
+            isEdited: editedText !== undefined && editedText !== originalText,
+            isApproved,
+            sentiment: 'positive',
+            submittedAt,
+          });
+        });
+      }
+
+      realCollatedQuestions = Array.from(questionMap.values()).sort((a, b) => a.order - b.order);
+      realCollatedQuestions.forEach(q => {
+        q.isApprovedForSharing = q.peerAnswers.some(p => p.isApproved);
+      });
+    }
+  } catch (err) {
+    console.error('Error dynamically collating peer reviews from Firestore:', err);
+  }
+
+  // 4. Fallback to mock data if Firestore has no submitted peer reviews yet
+  let finalQuestions: QuestionFeedbackCollation[] = [];
+
+  if (realCollatedQuestions.length > 0) {
+    finalQuestions = realCollatedQuestions;
+  } else if (mockCollatedDataByEmployeeId[employeeId]) {
+    const mock = mockCollatedDataByEmployeeId[employeeId];
+    finalQuestions = mock.collatedQuestions.map((q) => ({
+      ...q,
+      peerAnswers: q.peerAnswers.map((p, pIdx) => {
+        const respId = `resp-${employeeId}-${q.questionId}-${pIdx}`;
+        const originalText = p.answerText;
+        const editedText = editedMap[respId];
+        const isApproved = approvedIdsSet.has(respId);
+
+        return {
+          ...p,
+          id: respId,
+          originalAnswerText: originalText,
+          answerText: editedText !== undefined ? editedText : originalText,
+          isEdited: editedText !== undefined && editedText !== originalText,
+          isApproved,
+        };
+      }),
+      isApprovedForSharing: q.peerAnswers.some((_, pIdx) =>
+        approvedIdsSet.has(`resp-${employeeId}-${q.questionId}-${pIdx}`)
+      ),
+    }));
+  } else {
+    // Default fallback questions with generated response IDs
+    const defaultQs: QuestionFeedbackCollation[] = [
+      {
+        questionId: 'q1',
+        questionText: 'How has this team member contributed to core team goals and deliverables?',
+        order: 1,
+        category: 'Execution & Impact',
+        selfAnswer: 'Maintained steady progress across all sprint backlog items and addressed reported bugs promptly.',
+        peerAnswers: [
+          {
+            id: `resp-${employeeId}-q1-0`,
+            reviewerId: 'peer-1',
+            reviewerName: 'Peer Reviewer 1',
+            reviewerAvatarUrl: 'https://placehold.co/100x100.png?text=P1',
+            answerText: editedMap[`resp-${employeeId}-q1-0`] || 'Reliable team contributor who completes tasks with solid code quality.',
+            originalAnswerText: 'Reliable team contributor who completes tasks with solid code quality.',
+            isEdited: !!editedMap[`resp-${employeeId}-q1-0`],
+            isApproved: approvedIdsSet.has(`resp-${employeeId}-q1-0`),
+            sentiment: 'positive',
+          },
+        ],
+      },
+      {
+        questionId: 'q2',
+        questionText: 'Describe a situation where this person demonstrated strong teamwork and collaboration.',
+        order: 2,
+        category: 'Collaboration',
+        selfAnswer: 'Participated actively in daily standups and sprint retrospectives.',
+        peerAnswers: [
+          {
+            id: `resp-${employeeId}-q2-0`,
+            reviewerId: 'peer-2',
+            reviewerName: 'Peer Reviewer 2',
+            reviewerAvatarUrl: 'https://placehold.co/100x100.png?text=P2',
+            answerText: editedMap[`resp-${employeeId}-q2-0`] || 'Constructive collaborator during code reviews and always ready to help team members.',
+            originalAnswerText: 'Constructive collaborator during code reviews and always ready to help team members.',
+            isEdited: !!editedMap[`resp-${employeeId}-q2-0`],
+            isApproved: approvedIdsSet.has(`resp-${employeeId}-q2-0`),
+            sentiment: 'positive',
+          },
+        ],
+      },
+      {
+        questionId: 'q3',
+        questionText: 'In what areas could this peer improve, develop, or expand their impact further?',
+        order: 3,
+        category: 'Growth & Development',
+        selfAnswer: 'Aiming to expand knowledge in system architecture and technical leadership.',
+        peerAnswers: [
+          {
+            id: `resp-${employeeId}-q3-0`,
+            reviewerId: 'peer-1',
+            reviewerName: 'Peer Reviewer 1',
+            reviewerAvatarUrl: 'https://placehold.co/100x100.png?text=P1',
+            answerText: editedMap[`resp-${employeeId}-q3-0`] || 'Would love to see them take ownership of leading larger end-to-end features.',
+            originalAnswerText: 'Would love to see them take ownership of leading larger end-to-end features.',
+            isEdited: !!editedMap[`resp-${employeeId}-q3-0`],
+            isApproved: approvedIdsSet.has(`resp-${employeeId}-q3-0`),
+            sentiment: 'constructive',
+          },
+        ],
+      },
+    ];
+    defaultQs.forEach(q => {
+      q.isApprovedForSharing = q.peerAnswers.some(p => p.isApproved);
+    });
+    finalQuestions = defaultQs;
+  }
+
+  // 5. Initial MentorFeedback object if not existing
   const defaultFeedback: MentorFeedback = liveFeedback || {
     id: `mf-${employeeId}`,
     employeeId,
     employeeName,
     mentorId: 'current-mentor',
-    mentorName: 'Team Lead / Mentor',
-    mentorRole: 'Engineering Manager',
-    cycleId: 'cycle-active',
-    cycleName: 'Active Review Cycle',
+    mentorName,
+    mentorRole,
+    cycleId: cycleId || 'cycle-active',
+    cycleName: 'FY2024 H2 Review Cycle',
     sharedNotes: 'Notes from the 1:1 mentor feedback session will appear here in real time as discussed during the meeting.',
-    strengths: ['Consistent Delivery', 'Team Collaboration'],
-    growthAreas: ['Continuous Improvement', 'Knowledge Sharing'],
+    strengths: ['High Technical Craftsmanship', 'Team Collaboration'],
+    growthAreas: ['Cross-team Communication', 'Mentoring Junior Engineers'],
     actionItems: [
-      { id: 'ai-default-1', text: 'Define key professional goals for this quarter', completed: false },
+      { id: 'ai-default-1', text: 'Define key professional development goals for this quarter', completed: false },
     ],
     isShared: true,
+    isPeerFeedbackShared: false,
+    approvedResponseIds: [],
+    editedResponses: {},
     lastUpdated: new Date().toISOString(),
     status: 'in_meeting',
   };
-
-  const defaultCollatedQuestions: QuestionFeedbackCollation[] = [
-    {
-      questionId: 'q1',
-      questionText: 'How has this team member contributed to core team goals and deliverables?',
-      order: 1,
-      category: 'Execution & Impact',
-      selfAnswer: 'Maintained steady progress across all sprint backlog items and addressed reported bugs promptly.',
-      peerAnswers: [
-        {
-          reviewerId: 'peer-1',
-          reviewerName: 'Peer Reviewer 1',
-          reviewerAvatarUrl: 'https://placehold.co/100x100.png?text=P1',
-          answerText: 'Reliable team contributor who completes tasks with solid code quality.',
-          sentiment: 'positive',
-        },
-      ],
-    },
-    {
-      questionId: 'q2',
-      questionText: 'Describe a situation where this person demonstrated strong teamwork and collaboration.',
-      order: 2,
-      category: 'Collaboration',
-      selfAnswer: 'Participated actively in daily standups and sprint retrospectives.',
-      peerAnswers: [
-        {
-          reviewerId: 'peer-2',
-          reviewerName: 'Peer Reviewer 2',
-          reviewerAvatarUrl: 'https://placehold.co/100x100.png?text=P2',
-          answerText: 'Constructive collaborator during code reviews and always ready to help team members.',
-          sentiment: 'positive',
-        },
-      ],
-    },
-    {
-      questionId: 'q3',
-      questionText: 'In what areas could this peer improve, develop, or expand their impact further?',
-      order: 3,
-      category: 'Growth & Development',
-      selfAnswer: 'Aiming to expand knowledge in system architecture and technical leadership.',
-      peerAnswers: [
-        {
-          reviewerId: 'peer-1',
-          reviewerName: 'Peer Reviewer 1',
-          reviewerAvatarUrl: 'https://placehold.co/100x100.png?text=P1',
-          answerText: 'Would love to see them take ownership of leading larger end-to-end features.',
-          sentiment: 'constructive',
-        },
-      ],
-    },
-  ];
 
   return {
     employee: {
@@ -418,10 +621,10 @@ export async function getMemberFeedbackProfile(employeeId: string) {
       email: employeeEmail,
       avatarUrl: employeeAvatar,
       role: 'employee' as const,
-      mentorName: 'Team Lead / Mentor',
-      mentorRole: 'Engineering Manager',
+      mentorName,
+      mentorRole,
     },
-    collatedQuestions: defaultCollatedQuestions,
+    collatedQuestions: finalQuestions,
     mentorFeedback: defaultFeedback,
   };
 }
@@ -478,6 +681,9 @@ export async function saveMentorFeedback(feedback: Partial<MentorFeedback> & { e
     growthAreas: feedback.growthAreas || existing?.growthAreas || [],
     actionItems: feedback.actionItems || existing?.actionItems || [],
     isShared: feedback.isShared !== undefined ? feedback.isShared : (existing?.isShared ?? true),
+    isPeerFeedbackShared: feedback.isPeerFeedbackShared !== undefined ? feedback.isPeerFeedbackShared : (existing?.isPeerFeedbackShared ?? false),
+    approvedResponseIds: feedback.approvedResponseIds !== undefined ? feedback.approvedResponseIds : (existing?.approvedResponseIds ?? []),
+    editedResponses: feedback.editedResponses !== undefined ? feedback.editedResponses : (existing?.editedResponses ?? {}),
     lastUpdated: now,
     status: feedback.status || existing?.status || 'in_meeting',
   };

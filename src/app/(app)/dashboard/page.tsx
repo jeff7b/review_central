@@ -189,6 +189,7 @@ export default function DashboardPage() {
   const [activeEmployeeId, setActiveEmployeeId] = useState<string>('');
   const {
     feedback: liveMentorFeedback,
+    isLoading: isMentorFeedbackLoading,
     saveFeedback: saveMentorFeedbackFromEmployee,
     isConnected: isMentorSyncConnected,
     isSyncing: isMentorSyncing,
@@ -716,7 +717,17 @@ export default function DashboardPage() {
                   </div>
                 </div>
 
-                {liveMentorFeedback && liveMentorFeedback.isShared ? (
+                {isMentorFeedbackLoading ? (
+                  <Card className="border border-border/60 bg-card shadow-sm p-8 text-center">
+                    <div className="flex flex-col items-center justify-center space-y-3">
+                      <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                      <div className="space-y-1">
+                        <p className="text-xs font-medium text-foreground">Loading 1:1 Mentor Feedback session...</p>
+                        <p className="text-[11px] text-muted-foreground">Connecting to real-time feedback stream</p>
+                      </div>
+                    </div>
+                  </Card>
+                ) : liveMentorFeedback && liveMentorFeedback.isShared ? (
                   <Card className="border border-primary/20 bg-card shadow-sm overflow-hidden ring-1 ring-primary/10">
                     <div className="h-1.5 bg-gradient-to-r from-blue-500 via-primary to-indigo-500" />
                     <CardHeader className="pb-3 border-b border-border/40 bg-primary/5">

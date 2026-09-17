@@ -51,6 +51,7 @@ import {
   TrendingUp,
   RefreshCw,
   Lock,
+  UserCheck,
   ChevronDown,
   ChevronUp,
   Layers,
@@ -1026,7 +1027,7 @@ export default function DashboardPage() {
                   Past Review Cycles & Historical Evaluations
                 </h3>
                 <p className="text-xs text-muted-foreground">
-                  Official evaluations, performance ratings, and peer feedback summaries from previous completed review cycles.
+                  Official evaluations, performance ratings, and completed mentor feedback summaries from previous review cycles.
                 </p>
               </div>
 
@@ -1066,12 +1067,27 @@ export default function DashboardPage() {
                         </div>
 
                         <div className="flex flex-wrap items-center gap-1.5 pt-1 text-xs text-muted-foreground">
-                          <Lock className="h-3 w-3 text-muted-foreground" />
-                          <span>Evaluator:</span>
-                          <span className="font-medium text-foreground">{item.reviewer.startsWith('Anonymous') ? item.reviewer : 'Anonymous Reviewer'}</span>
-                          <Badge variant="outline" className="text-[10px] py-0 px-1.5 bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300">
-                            Anonymous
-                          </Badge>
+                          {item.reviewer.startsWith('Anonymous') ? (
+                            <>
+                              <Lock className="h-3 w-3 text-muted-foreground" />
+                              <span>Evaluator:</span>
+                              <span className="font-medium text-foreground">{item.reviewer}</span>
+                              <Badge variant="outline" className="text-[10px] py-0 px-1.5 bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300">
+                                Anonymous
+                              </Badge>
+                            </>
+                          ) : (
+                            <>
+                              <UserCheck className="h-3.5 w-3.5 text-primary" />
+                              <span>Mentor / Evaluator:</span>
+                              <span className="font-medium text-foreground">{item.reviewer}</span>
+                              {item.reviewerRole && (
+                                <Badge variant="secondary" className="text-[10px] py-0 px-1.5 font-normal">
+                                  {item.reviewerRole}
+                                </Badge>
+                              )}
+                            </>
+                          )}
                           <span>• Completed on {new Date(item.completedDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>
                         </div>
                       </CardHeader>
@@ -1129,7 +1145,7 @@ export default function DashboardPage() {
                     <History className="mx-auto h-10 w-10 text-muted-foreground mb-3" />
                     <h3 className="text-sm font-semibold text-foreground">No feedback history yet</h3>
                     <p className="text-xs text-muted-foreground mt-1">
-                      Past performance evaluations and completed peer feedback summaries will appear here once review cycles conclude.
+                      Completed mentor evaluations and feedback summaries will appear here once previous review cycles conclude.
                     </p>
                   </CardContent>
                 </Card>

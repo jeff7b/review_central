@@ -662,7 +662,11 @@ export default function TeamMemberProfilePage() {
             size="sm"
             className="h-8 text-xs font-medium shadow-sm"
             onClick={() => {
-              saveFeedback({ status: 'finalized' }, true);
+              saveFeedback({
+                status: 'finalized',
+                cycleId: profileData?.reviewCycle?.id || cycleId,
+                cycleName: profileData?.reviewCycle?.name,
+              }, true);
               toast({
                 title: 'Feedback Session Finalized',
                 description: 'Record marked as completed and saved to feedback history.',

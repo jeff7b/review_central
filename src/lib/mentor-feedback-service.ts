@@ -440,10 +440,37 @@ export async function saveMentorFeedback(feedback: Partial<MentorFeedback> & { e
 
   // Update in-memory store
   inMemoryMentorFeedback.set(feedback.employeeId, updated);
+  if (targetCycleId) {
+    inMemoryMentorFeedback.set(`${feedback.employeeId}_${targetCycleId}`, updated);
+  }
 
   // Update Firestore
   try {
     await adminDb.collection('mentor-feedback').doc(feedback.employeeId).set(updated, { merge: true });
+    if (targetCycleId) {
+      await adminDb.collection('mentor-feedback').doc(`${feedback.employeeId}_${targetCycleId}`).set(updated, { merge: true });
+    }
+
+    // If session is finalized or completed, record in evaluations collection for permanent historical record
+    if (updated.status === 'finalized' || (updated.status as any) === 'completed') {
+      const evalId = `eval-${feedback.employeeId}-${targetCycleId || 'cycle'}`;
+      await adminDb.collection('evaluations').doc(evalId).set({
+        id: evalId,
+        revieweeId: feedback.employeeId,
+        cycleId: targetCycleId,
+        cycleTitle: updated.cycleName,
+        completedDate: now,
+        type: 'Mentor Performance Evaluation',
+        overallRating: 'Completed',
+        ratingTier: 'meets',
+        reviewer: updated.mentorName,
+        reviewerRole: updated.mentorRole,
+        summary: updated.sharedNotes,
+        keyStrengths: updated.strengths,
+        growthAreas: updated.growthAreas,
+        updatedAt: now,
+      }, { merge: true });
+    }
   } catch (err) {
     console.warn(`Firestore mentor-feedback write failed for ${feedback.employeeId}:`, err);
   }

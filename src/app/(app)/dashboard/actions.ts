@@ -2,7 +2,7 @@
 
 import { adminDb } from '@/lib/firebase-admin';
 import { getCurrentAppUser } from '@/lib/auth';
-import type { Review, PersonalNote, HistoricalEvaluation, PeerReviewAssignment, ReviewCycle, User } from '@/types';
+import type { Review, PersonalNote, HistoricalEvaluation, PeerReviewAssignment, ReviewCycle, User, MentorFeedback } from '@/types';
 import { Timestamp } from 'firebase-admin/firestore';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
@@ -211,39 +211,10 @@ export async function getDashboardDataAction(cycleId?: string): Promise<Dashboar
       notes.sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
     }
 
-    // 5. Fetch feedback history (completed peer reviews where user is reviewee)
-    let completedAssignmentsQuery = adminDb.collection('peer-review-assignments')
-      .where('revieweeId', '==', userId)
-      .where('status', '==', 'completed') as FirebaseFirestore.Query;
-
-    if (selectedCycleId) {
-      completedAssignmentsQuery = completedAssignmentsQuery.where('reviewCycleId', '==', selectedCycleId);
-    }
-
-    const completedAssignmentsForUserSnap = await completedAssignmentsQuery.get().catch(() => null);
-
+    // 5. Fetch feedback history (only previous cycles completed Mentor Feedback, NOT individual peer reviews)
     const feedbackHistory: HistoricalEvaluation[] = [];
-    if (completedAssignmentsForUserSnap && !completedAssignmentsForUserSnap.empty) {
-      completedAssignmentsForUserSnap.docs.forEach((aDoc, aIdx) => {
-        const a = aDoc.data() as PeerReviewAssignment;
-        feedbackHistory.push({
-          id: `eval-${aDoc.id}`,
-          cycleTitle: selectedCycle ? selectedCycle.name : `Peer Evaluation #${aIdx + 1}`,
-          period: selectedCycle ? `${new Date(selectedCycle.startDate).toLocaleDateString()} – ${new Date(selectedCycle.endDate).toLocaleDateString()}` : 'Review Cycle',
-          completedDate: toISOString(a.updatedAt),
-          type: '360 Peer Evaluation',
-          overallRating: 'Completed',
-          ratingTier: 'meets',
-          reviewer: `Anonymous Reviewer #${aIdx + 1}`,
-          reviewerRole: 'Peer Evaluator',
-          summary: `Peer evaluation submitted anonymously.`,
-          keyStrengths: ['Teamwork', 'Collaboration'],
-          growthAreas: ['Continued Knowledge Sharing'],
-        });
-      });
-    }
 
-    // Also check dedicated 'evaluations' collection if present
+    // Query 'evaluations' collection for previous cycles completed evaluations
     const evaluationsSnap = await adminDb.collection('evaluations')
       .where('revieweeId', '==', userId)
       .get()
@@ -252,22 +223,93 @@ export async function getDashboardDataAction(cycleId?: string): Promise<Dashboar
     if (evaluationsSnap && !evaluationsSnap.empty) {
       evaluationsSnap.docs.forEach(doc => {
         const d = doc.data();
+        // Exclude current cycle evaluations
+        if (selectedCycleId && d.cycleId && d.cycleId === selectedCycleId) {
+          return;
+        }
+        const cycle = d.cycleId ? cyclesMap.get(d.cycleId) : undefined;
         feedbackHistory.push({
           id: doc.id,
-          cycleTitle: d.cycleTitle || 'Performance Review Cycle',
-          period: d.period || '',
+          cycleTitle: d.cycleTitle || cycle?.name || 'Performance Review Cycle',
+          period: d.period || (cycle ? `${new Date(cycle.startDate).toLocaleDateString()} – ${new Date(cycle.endDate).toLocaleDateString()}` : ''),
           completedDate: toISOString(d.completedDate || d.updatedAt),
-          type: d.type || 'Annual Performance Review',
-          overallRating: d.overallRating || 'Meets Expectations',
+          type: d.type || 'Mentor Performance Evaluation',
+          overallRating: d.overallRating || 'Completed',
           ratingTier: d.ratingTier || 'meets',
-          reviewer: d.reviewer || 'Supervisor',
-          reviewerRole: d.reviewerRole || 'Reviewer',
+          reviewer: d.reviewer || 'Mentor / Team Lead',
+          reviewerRole: d.reviewerRole || 'Mentor & Team Lead',
           summary: d.summary || '',
-          keyStrengths: d.keyStrengths || [],
-          growthAreas: d.growthAreas || [],
+          keyStrengths: Array.isArray(d.keyStrengths) ? d.keyStrengths : [],
+          growthAreas: Array.isArray(d.growthAreas) ? d.growthAreas : [],
         });
       });
     }
+
+    // Query 'mentor-feedback' collection for completed/finalized feedback from previous cycles
+    const mentorFeedbackSnap = await adminDb.collection('mentor-feedback')
+      .where('employeeId', '==', userId)
+      .get()
+      .catch(() => null);
+
+    // Also check single doc fallback
+    const directUserFeedbackDoc = await adminDb.collection('mentor-feedback')
+      .doc(userId)
+      .get()
+      .catch(() => null);
+
+    const allMfItems: { id: string; data: MentorFeedback }[] = [];
+    if (mentorFeedbackSnap && !mentorFeedbackSnap.empty) {
+      mentorFeedbackSnap.docs.forEach(d => {
+        allMfItems.push({ id: d.id, data: d.data() as MentorFeedback });
+      });
+    }
+    if (directUserFeedbackDoc && directUserFeedbackDoc.exists && !allMfItems.some(item => item.id === directUserFeedbackDoc.id)) {
+      allMfItems.push({ id: directUserFeedbackDoc.id, data: directUserFeedbackDoc.data() as MentorFeedback });
+    }
+
+    const recordedTitles = new Set(feedbackHistory.map(f => f.cycleTitle));
+
+    allMfItems.forEach(item => {
+      const mf = item.data;
+      if (!mf) return;
+
+      // Must be from a previous cycle, not the currently active/selected cycle
+      const isCurrentCycle = selectedCycleId && mf.cycleId === selectedCycleId;
+      if (isCurrentCycle) {
+        return;
+      }
+
+      const cycle = mf.cycleId ? cyclesMap.get(mf.cycleId) : undefined;
+      // Must be finalized/completed
+      const isCompleted = mf.status === 'finalized' || (mf.status as any) === 'completed' || (cycle && cycle.status === 'closed' && mf.isShared);
+      if (!isCompleted) {
+        return;
+      }
+
+      const cycleTitle = mf.cycleName || cycle?.name || 'Past Review Cycle';
+      if (recordedTitles.has(cycleTitle)) {
+        return;
+      }
+      recordedTitles.add(cycleTitle);
+
+      feedbackHistory.push({
+        id: `eval-${item.id}`,
+        cycleTitle,
+        period: cycle ? `${new Date(cycle.startDate).toLocaleDateString()} – ${new Date(cycle.endDate).toLocaleDateString()}` : '',
+        completedDate: toISOString(mf.lastUpdated),
+        type: '1:1 Mentor Feedback',
+        overallRating: 'Completed',
+        ratingTier: 'meets',
+        reviewer: mf.mentorName || 'Mentor / Team Lead',
+        reviewerRole: mf.mentorRole || 'Mentor & Team Lead',
+        summary: mf.sharedNotes || '',
+        keyStrengths: Array.isArray(mf.strengths) ? mf.strengths : [],
+        growthAreas: Array.isArray(mf.growthAreas) ? mf.growthAreas : [],
+      });
+    });
+
+    // Sort feedbackHistory by completedDate desc
+    feedbackHistory.sort((a, b) => new Date(b.completedDate || 0).getTime() - new Date(a.completedDate || 0).getTime());
 
     return {
       selfReviews: userSelfReviews,

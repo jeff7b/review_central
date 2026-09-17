@@ -76,6 +76,7 @@ interface MentorNotesPanelProps {
   cycleId?: string;
   reviewCycleId?: string;
   reviewCycleName?: string;
+  onToggleSharePeerFeedback?: () => void;
 }
 
 function MentorNotesPanel({
@@ -88,6 +89,7 @@ function MentorNotesPanel({
   cycleId,
   reviewCycleId,
   reviewCycleName,
+  onToggleSharePeerFeedback,
 }: MentorNotesPanelProps) {
   const { toast } = useToast();
   const [notes, setNotes] = useState(liveFeedback?.sharedNotes || '');
@@ -216,7 +218,7 @@ function MentorNotesPanel({
             </CardDescription>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Badge
               variant="outline"
               className={`text-xs px-2.5 py-1 font-medium ${
@@ -226,7 +228,18 @@ function MentorNotesPanel({
               }`}
             >
               <Radio className="mr-1.5 h-3 w-3 text-emerald-500 animate-pulse" />
-              {liveFeedback?.isShared ? 'Shared to Employee Screen' : 'Private Draft'}
+              {liveFeedback?.isShared ? 'Notes Shared' : 'Notes Private'}
+            </Badge>
+            <Badge
+              variant="outline"
+              className={`text-xs px-2.5 py-1 font-medium ${
+                liveFeedback?.isPeerFeedbackShared
+                  ? 'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900/50 dark:bg-blue-950/40 dark:text-blue-300'
+                  : 'border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-800'
+              }`}
+            >
+              <Users className="mr-1.5 h-3 w-3 text-blue-600" />
+              {liveFeedback?.isPeerFeedbackShared ? 'Peer Feedback Shared' : 'Peer Feedback Hidden'}
             </Badge>
           </div>
         </div>
@@ -436,7 +449,7 @@ function MentorNotesPanel({
           <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
           <span>All edits are automatically saved and broadcast live to {employeeName}.</span>
         </div>
-        <div className="flex items-center gap-2 w-full sm:w-auto">
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
           <Button
             size="sm"
             variant="outline"
@@ -452,8 +465,23 @@ function MentorNotesPanel({
             }}
           >
             <Share2 className="mr-1.5 h-3.5 w-3.5" />
-            {liveFeedback?.isShared ? 'Pause Live Sharing' : 'Activate Live Sharing'}
+            {liveFeedback?.isShared ? 'Pause Live Notes' : 'Activate Live Notes'}
           </Button>
+          {onToggleSharePeerFeedback && (
+            <Button
+              size="sm"
+              variant={liveFeedback?.isPeerFeedbackShared ? 'default' : 'outline'}
+              className={`h-8 text-xs font-medium ${
+                liveFeedback?.isPeerFeedbackShared
+                  ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                  : 'border-blue-300 text-blue-700 hover:bg-blue-50 dark:text-blue-300 dark:border-blue-800'
+              }`}
+              onClick={onToggleSharePeerFeedback}
+            >
+              <Users className="mr-1.5 h-3.5 w-3.5" />
+              {liveFeedback?.isPeerFeedbackShared ? 'Pause Peer Sharing' : 'Share Peer Feedback'}
+            </Button>
+          )}
           <Button
             size="sm"
             className="h-8 text-xs font-medium shadow-sm"
@@ -544,7 +572,11 @@ export default function TeamMemberProfilePage() {
     }
 
     const updatedApproved = Array.from(currentApprovedSet);
-    saveFeedback({ approvedResponseIds: updatedApproved }, true);
+    const shouldShare = updatedApproved.length > 0;
+    saveFeedback({
+      approvedResponseIds: updatedApproved,
+      isPeerFeedbackShared: shouldShare,
+    }, true);
 
     // Update local state in profileData so UI reflects immediately
     setProfileData((prev) => {
@@ -568,6 +600,49 @@ export default function TeamMemberProfilePage() {
       description: currentApproved
         ? 'This peer comment will not be visible on the employee dashboard.'
         : 'This anonymous peer comment is now approved and visible to the employee.',
+    });
+  };
+
+  // Master toggle to share or pause peer feedback for employee
+  const handleToggleSharePeerFeedback = () => {
+    const nextShared = !liveFeedback?.isPeerFeedbackShared;
+    let nextApproved = liveFeedback?.approvedResponseIds || [];
+
+    if (nextShared && nextApproved.length === 0 && profileData?.collatedQuestions) {
+      const allIds: string[] = [];
+      profileData.collatedQuestions.forEach((q) => {
+        q.peerAnswers.forEach((p) => {
+          if (p.id) allIds.push(p.id);
+        });
+      });
+      nextApproved = allIds;
+    }
+
+    saveFeedback({
+      isPeerFeedbackShared: nextShared,
+      approvedResponseIds: nextApproved,
+    }, true);
+
+    setProfileData((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        collatedQuestions: prev.collatedQuestions.map((q) => ({
+          ...q,
+          peerAnswers: q.peerAnswers.map((p) => ({
+            ...p,
+            isApproved: nextShared ? (nextApproved.includes(p.id || '') ? true : p.isApproved) : p.isApproved,
+          })),
+          isApprovedForSharing: nextShared,
+        })),
+      };
+    });
+
+    toast({
+      title: nextShared ? 'Peer Feedback Shared' : 'Peer Feedback Sharing Paused',
+      description: nextShared
+        ? `Anonymous peer feedback is now visible alongside 1:1 notes on ${employee.name}'s screen.`
+        : `Peer feedback is now hidden from ${employee.name}'s screen.`,
     });
   };
 
@@ -957,6 +1032,7 @@ export default function TeamMemberProfilePage() {
               cycleId={cycleId}
               reviewCycleId={profileData.reviewCycle?.id}
               reviewCycleName={profileData.reviewCycle?.name}
+              onToggleSharePeerFeedback={handleToggleSharePeerFeedback}
             />
           </div>
         </div>
@@ -1027,6 +1103,19 @@ export default function TeamMemberProfilePage() {
               </div>
 
               <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                <Button
+                  size="sm"
+                  variant={liveFeedback?.isPeerFeedbackShared ? 'default' : 'outline'}
+                  className={`h-8 text-xs font-medium ${
+                    liveFeedback?.isPeerFeedbackShared
+                      ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                      : 'border-blue-300 text-blue-700 hover:bg-blue-50 dark:text-blue-300 dark:border-blue-800'
+                  }`}
+                  onClick={handleToggleSharePeerFeedback}
+                >
+                  <Share2 className="mr-1.5 h-3.5 w-3.5" />
+                  {liveFeedback?.isPeerFeedbackShared ? 'Pause Peer Sharing' : 'Share Peer Feedback'}
+                </Button>
                 <Button
                   size="sm"
                   variant="outline"
@@ -1124,6 +1213,7 @@ export default function TeamMemberProfilePage() {
               cycleId={cycleId}
               reviewCycleId={profileData.reviewCycle?.id}
               reviewCycleName={profileData.reviewCycle?.name}
+              onToggleSharePeerFeedback={handleToggleSharePeerFeedback}
             />
           </TabsContent>
 

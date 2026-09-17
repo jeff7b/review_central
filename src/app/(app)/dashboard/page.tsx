@@ -210,7 +210,6 @@ export default function DashboardPage() {
 
   // Collated peer feedback received (strictly anonymous, only approved answers)
   const [rawCollatedQuestions, setRawCollatedQuestions] = useState<QuestionFeedbackCollation[]>([]);
-  const [showPeerFeedback, setShowPeerFeedback] = useState(false);
 
   useEffect(() => {
     async function loadReceivedPeerFeedback() {
@@ -226,22 +225,35 @@ export default function DashboardPage() {
     if (activeEmployeeId) {
       loadReceivedPeerFeedback();
     }
-  }, [activeEmployeeId, selectedCycleId]);
+  }, [
+    activeEmployeeId,
+    selectedCycleId,
+    liveMentorFeedback?.isPeerFeedbackShared,
+    liveMentorFeedback?.approvedResponseIds?.length,
+    liveMentorFeedback?.lastUpdated,
+  ]);
 
   // Filter collated questions to ONLY include mentor-approved responses and apply live mentor edits
   const receivedQuestions = useMemo<QuestionFeedbackCollation[]>(() => {
-    // If master peer feedback sharing is disabled, or no approved responses exist, return empty
+    // If master peer feedback sharing is disabled AND no approved responses exist, return empty
     if (!liveMentorFeedback?.isPeerFeedbackShared && (liveMentorFeedback?.approvedResponseIds || []).length === 0) {
       return [];
     }
 
     const approvedIds = new Set<string>(liveMentorFeedback?.approvedResponseIds || []);
     const editedMap = liveMentorFeedback?.editedResponses || {};
+    const isMasterShared = !!liveMentorFeedback?.isPeerFeedbackShared;
 
     return rawCollatedQuestions
       .map((q) => {
         const approvedPeerAnswers = q.peerAnswers
-          .filter((p) => p.id && approvedIds.has(p.id))
+          .filter((p) => {
+            if (!p.id) return false;
+            if (approvedIds.size > 0) {
+              return approvedIds.has(p.id);
+            }
+            return isMasterShared;
+          })
           .map((p) => {
             const respId = p.id || '';
             const editedText = respId ? editedMap[respId] : undefined;
@@ -728,7 +740,7 @@ export default function DashboardPage() {
                       </div>
                     </div>
                   </Card>
-                ) : liveMentorFeedback && liveMentorFeedback.isShared ? (
+                ) : (liveMentorFeedback && (liveMentorFeedback.isShared || liveMentorFeedback.isPeerFeedbackShared || receivedQuestions.length > 0)) ? (
                   <Card className="border border-primary/20 bg-card shadow-sm overflow-hidden ring-1 ring-primary/10">
                     <div className="h-1.5 bg-gradient-to-r from-blue-500 via-primary to-indigo-500" />
                     <CardHeader className="pb-3 border-b border-border/40 bg-primary/5">
@@ -757,123 +769,304 @@ export default function DashboardPage() {
                           </div>
                         </div>
 
-                        <div className="text-left sm:text-right">
-                          <span className="text-[11px] text-muted-foreground block">
-                            Last live update:
-                          </span>
-                          <span className="text-xs font-medium text-foreground">
-                            {mentorLastSyncedAt
-                              ? mentorLastSyncedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-                              : new Date(liveMentorFeedback.lastUpdated).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </span>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge
+                            variant="outline"
+                            className={`text-[10px] px-2 py-0.5 font-medium ${
+                              liveMentorFeedback.isShared
+                                ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
+                                : 'border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-800'
+                            }`}
+                          >
+                            <Radio className="mr-1 h-2.5 w-2.5 text-emerald-500 animate-pulse" />
+                            {liveMentorFeedback.isShared ? '1:1 Notes Live' : '1:1 Notes in Draft'}
+                          </Badge>
+
+                          <Badge
+                            variant="outline"
+                            className={`text-[10px] px-2 py-0.5 font-medium ${
+                              liveMentorFeedback.isPeerFeedbackShared || receivedQuestions.length > 0
+                                ? 'border-blue-300 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300'
+                                : 'border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-800'
+                            }`}
+                          >
+                            <Users className="mr-1 h-2.5 w-2.5 text-blue-600" />
+                            {liveMentorFeedback.isPeerFeedbackShared || receivedQuestions.length > 0
+                              ? 'Peer Feedback Shared'
+                              : 'Peer Feedback Pending'}
+                          </Badge>
+
+                          <div className="text-left sm:text-right ml-1 sm:ml-2">
+                            <span className="text-[10px] text-muted-foreground block">
+                              Last live sync:
+                            </span>
+                            <span className="text-xs font-medium text-foreground">
+                              {mentorLastSyncedAt
+                                ? mentorLastSyncedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                                : new Date(liveMentorFeedback.lastUpdated).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
                         </div>
                       </div>
                     </CardHeader>
 
-                    <CardContent className="p-4 sm:p-6 space-y-5">
-                      {/* Shared Live Notes Area */}
-                      <div className="space-y-2">
-                        <h4 className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                          <MessageSquare className="h-3.5 w-3.5 text-primary" />
-                          1:1 Discussion Notes & Mentor Performance Feedback
-                        </h4>
-                        <div className="p-4 rounded-lg bg-muted/40 border border-border/50 text-xs leading-relaxed text-foreground whitespace-pre-wrap font-sans">
-                          {liveMentorFeedback.sharedNotes ? (
-                            liveMentorFeedback.sharedNotes
-                          ) : (
-                            <span className="italic text-muted-foreground">
-                              Your mentor is currently typing feedback. Notes will appear here live...
+                    <CardContent className="p-4 sm:p-6">
+                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                        {/* COLUMN 1: 1:1 Discussion Notes & Commitments (6 cols) */}
+                        <div className="lg:col-span-6 space-y-5">
+                          <div className="flex items-center justify-between pb-1 border-b border-border/40">
+                            <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                              <MessageSquare className="h-3.5 w-3.5 text-primary" />
+                              1:1 Discussion & Commitments
+                            </h3>
+                            {liveMentorFeedback.isShared ? (
+                              <Badge variant="outline" className="text-[9px] py-0 border-emerald-300 bg-emerald-50 text-emerald-700">
+                                Live
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="text-[9px] py-0 text-muted-foreground">
+                                Private Draft
+                              </Badge>
+                            )}
+                          </div>
+
+                          {/* Shared Live Notes Area */}
+                          <div className="space-y-2">
+                            <h4 className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                              1:1 Discussion Notes & Mentor Performance Feedback
+                            </h4>
+                            <div className="p-4 rounded-lg bg-muted/40 border border-border/50 text-xs leading-relaxed text-foreground whitespace-pre-wrap font-sans min-h-[120px]">
+                              {liveMentorFeedback.isShared ? (
+                                liveMentorFeedback.sharedNotes ? (
+                                  liveMentorFeedback.sharedNotes
+                                ) : (
+                                  <span className="italic text-muted-foreground">
+                                    Your mentor is currently typing feedback. Notes will appear here live...
+                                  </span>
+                                )
+                              ) : (
+                                <span className="italic text-muted-foreground">
+                                  Your mentor is preparing private notes. When live sharing is activated, they will stream here in real time.
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Action Items Checklist */}
+                          <div className="space-y-2.5 pt-1">
+                            <div className="flex items-center justify-between">
+                              <h4 className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                                <CheckCircle className="h-3.5 w-3.5 text-emerald-600" />
+                                Agreed Action Items & Milestones
+                              </h4>
+                              {liveMentorFeedback.actionItems && liveMentorFeedback.actionItems.length > 0 && (
+                                <span className="text-[11px] text-muted-foreground font-medium">
+                                  {liveMentorFeedback.actionItems.filter((a) => a.completed).length} / {liveMentorFeedback.actionItems.length} completed
+                                </span>
+                              )}
+                            </div>
+
+                            {liveMentorFeedback.actionItems && liveMentorFeedback.actionItems.length > 0 ? (
+                              <div className="space-y-2">
+                                {liveMentorFeedback.actionItems.map((item) => (
+                                  <div
+                                    key={item.id}
+                                    onClick={() => handleToggleEmployeeActionItem(item.id)}
+                                    className={`flex items-start gap-2.5 p-2.5 rounded-md border text-xs cursor-pointer transition-all ${
+                                      item.completed
+                                        ? 'bg-muted/40 border-border/40 text-muted-foreground line-through'
+                                        : 'bg-card border-border hover:border-primary/50'
+                                    }`}
+                                  >
+                                    <div
+                                      className={`h-4 w-4 rounded border mt-0.5 flex items-center justify-center shrink-0 transition-colors ${
+                                        item.completed
+                                          ? 'bg-emerald-600 border-emerald-600 text-white'
+                                          : 'border-muted-foreground/50'
+                                      }`}
+                                    >
+                                      {item.completed && <Check className="h-3 w-3" />}
+                                    </div>
+                                    <span className="leading-snug select-none">{item.text}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-xs text-muted-foreground italic p-3 rounded-md bg-muted/20 border border-dashed border-border/60">
+                                No action items agreed yet. Commitments added during your 1:1 will show here.
+                              </p>
+                            )}
+                          </div>
+
+                          {/* Strengths & Growth Areas */}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+                            <div className="space-y-1.5">
+                              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                                <Award className="h-3.5 w-3.5 text-emerald-600" /> Strengths Recognized
+                              </span>
+                              {liveMentorFeedback.strengths && liveMentorFeedback.strengths.length > 0 ? (
+                                <div className="flex flex-wrap gap-1.5">
+                                  {liveMentorFeedback.strengths.map((str) => (
+                                    <Badge
+                                      key={str}
+                                      variant="outline"
+                                      className="text-[11px] font-normal py-0.5 bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300"
+                                    >
+                                      {str}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              ) : (
+                                <p className="text-[11px] text-muted-foreground italic">No strengths tagged yet.</p>
+                              )}
+                            </div>
+
+                            <div className="space-y-1.5">
+                              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                                <TrendingUp className="h-3.5 w-3.5 text-blue-600" /> Focus Areas for Growth
+                              </span>
+                              {liveMentorFeedback.growthAreas && liveMentorFeedback.growthAreas.length > 0 ? (
+                                <div className="flex flex-wrap gap-1.5">
+                                  {liveMentorFeedback.growthAreas.map((area) => (
+                                    <Badge
+                                      key={area}
+                                      variant="outline"
+                                      className="text-[11px] font-normal py-0.5 bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300"
+                                    >
+                                      {area}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              ) : (
+                                <p className="text-[11px] text-muted-foreground italic">No growth areas tagged yet.</p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* COLUMN 2: Collated Peer Feedback Received (6 cols, ALONGSIDE 1:1 notes) */}
+                        <div className="lg:col-span-6 space-y-5 lg:border-l lg:border-border/50 lg:pl-6">
+                          <div className="flex items-center justify-between pb-1 border-b border-border/40">
+                            <div className="flex items-center gap-2">
+                              <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                                <Layers className="h-3.5 w-3.5 text-primary" />
+                                Collated Peer Feedback
+                              </h3>
+                              <Badge variant="outline" className="text-[9px] py-0 border-emerald-300 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 flex items-center gap-1">
+                                <Lock className="h-2 w-2" /> 100% Anonymous
+                              </Badge>
+                            </div>
+                            {receivedQuestions.length > 0 ? (
+                              <Badge variant="outline" className="text-[10px] font-medium border-primary/30 bg-primary/5 text-primary">
+                                {receivedQuestions.length} Question{receivedQuestions.length !== 1 ? 's' : ''}
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="text-[9px] py-0 text-muted-foreground">
+                                Pending Approval
+                              </Badge>
+                            )}
+                          </div>
+
+                          <div className="p-3 rounded-lg bg-muted/40 border border-border/50 text-[11px] text-muted-foreground flex items-center gap-2">
+                            <Lock className="h-3.5 w-3.5 text-primary shrink-0" />
+                            <span>
+                              <strong>Anonymous & Curated:</strong> Peer comments are aggregated question-by-question without reviewer identities and curated by your mentor for this 1:1 discussion.
                             </span>
+                          </div>
+
+                          {receivedQuestions.length > 0 ? (
+                            <div className="space-y-4 max-h-[680px] overflow-y-auto pr-1">
+                              {receivedQuestions.map((q) => (
+                                <div key={q.questionId} className="rounded-lg border border-border/70 bg-card p-3.5 space-y-3 shadow-xs">
+                                  <div className="flex items-start gap-2.5">
+                                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary text-[11px] font-bold mt-0.5">
+                                      Q{q.order}
+                                    </span>
+                                    <div className="space-y-0.5">
+                                      {q.category && (
+                                        <Badge variant="outline" className="text-[9px] uppercase font-semibold tracking-wider text-muted-foreground">
+                                          {q.category}
+                                        </Badge>
+                                      )}
+                                      <h4 className="text-xs font-semibold text-foreground">{q.questionText}</h4>
+                                    </div>
+                                  </div>
+
+                                  {/* Self Answer */}
+                                  {q.selfAnswer && (
+                                    <div className="pl-7 text-xs p-2.5 rounded bg-emerald-50/30 border border-emerald-200/50 text-foreground">
+                                      <span className="font-semibold text-emerald-800 dark:text-emerald-300 block text-[10px] mb-0.5">
+                                        Your Self-Assessment:
+                                      </span>
+                                      <p className="italic text-foreground/90">&ldquo;{q.selfAnswer}&rdquo;</p>
+                                    </div>
+                                  )}
+
+                                  {/* Anonymous Peer Answers */}
+                                  <div className="pl-7 space-y-2 pt-0.5">
+                                    <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block">
+                                      Anonymous Peer Responses ({q.peerAnswers.length})
+                                    </span>
+                                    <div className="space-y-2">
+                                      {q.peerAnswers.map((peer, pIdx) => (
+                                        <div
+                                          key={peer.id || pIdx}
+                                          className="p-3 rounded-md border border-border/50 bg-muted/20 space-y-1.5 text-xs"
+                                        >
+                                          <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-1.5">
+                                              <span className="font-semibold text-foreground text-[11px] flex items-center gap-1">
+                                                <Lock className="h-2.5 w-2.5 text-muted-foreground" />
+                                                Anonymous Peer #{pIdx + 1}
+                                              </span>
+                                              {peer.isEdited && (
+                                                <Badge variant="outline" className="text-[9px] py-0 px-1 border-blue-200 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
+                                                  Edited by Mentor
+                                                </Badge>
+                                              )}
+                                            </div>
+                                            {peer.sentiment && (
+                                              <Badge
+                                                variant="outline"
+                                                className={`text-[9px] py-0 px-1.5 ${
+                                                  peer.sentiment === 'positive'
+                                                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                                                    : peer.sentiment === 'constructive'
+                                                    ? 'border-blue-200 bg-blue-50 text-blue-700'
+                                                    : 'border-slate-200 bg-slate-100 text-slate-700'
+                                                }`}
+                                              >
+                                                {peer.sentiment === 'positive' ? 'Positive' : peer.sentiment === 'constructive' ? 'Growth' : 'Neutral'}
+                                              </Badge>
+                                            )}
+                                          </div>
+                                          <p className="text-muted-foreground italic text-[11px] leading-relaxed">
+                                            &ldquo;{peer.answerText}&rdquo;
+                                          </p>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="border border-dashed rounded-lg p-6 text-center bg-muted/10 space-y-2">
+                              <Lock className="mx-auto h-7 w-7 text-muted-foreground/80 mb-1" />
+                              <h4 className="text-xs font-semibold text-foreground">Peer Feedback Under Mentor Review</h4>
+                              <p className="text-[11px] text-muted-foreground max-w-sm mx-auto leading-relaxed">
+                                When your mentor approves and shares anonymous peer reviews during your 1:1 session, they will appear right here alongside your notes.
+                              </p>
+                            </div>
                           )}
                         </div>
-                      </div>
-
-                      {/* Action Items Checklist */}
-                      {liveMentorFeedback.actionItems && liveMentorFeedback.actionItems.length > 0 && (
-                        <div className="space-y-2.5 pt-1">
-                          <div className="flex items-center justify-between">
-                            <h4 className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                              <CheckCircle className="h-3.5 w-3.5 text-emerald-600" />
-                              Agreed Action Items & Development Milestones
-                            </h4>
-                            <span className="text-[11px] text-muted-foreground font-medium">
-                              {liveMentorFeedback.actionItems.filter((a) => a.completed).length} / {liveMentorFeedback.actionItems.length} completed
-                            </span>
-                          </div>
-
-                          <div className="space-y-2">
-                            {liveMentorFeedback.actionItems.map((item) => (
-                              <div
-                                key={item.id}
-                                onClick={() => handleToggleEmployeeActionItem(item.id)}
-                                className={`flex items-start gap-2.5 p-2.5 rounded-md border text-xs cursor-pointer transition-all ${
-                                  item.completed
-                                    ? 'bg-muted/40 border-border/40 text-muted-foreground line-through'
-                                    : 'bg-card border-border hover:border-primary/50'
-                                }`}
-                              >
-                                <div
-                                  className={`h-4 w-4 rounded border mt-0.5 flex items-center justify-center shrink-0 transition-colors ${
-                                    item.completed
-                                      ? 'bg-emerald-600 border-emerald-600 text-white'
-                                      : 'border-muted-foreground/50'
-                                  }`}
-                                >
-                                  {item.completed && <Check className="h-3 w-3" />}
-                                </div>
-                                <span className="leading-snug select-none">{item.text}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Strengths & Growth Areas */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
-                        {liveMentorFeedback.strengths && liveMentorFeedback.strengths.length > 0 && (
-                          <div className="space-y-1.5">
-                            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-                              <Award className="h-3.5 w-3.5 text-emerald-600" /> Strengths Recognized
-                            </span>
-                            <div className="flex flex-wrap gap-1.5">
-                              {liveMentorFeedback.strengths.map((str) => (
-                                <Badge
-                                  key={str}
-                                  variant="outline"
-                                  className="text-[11px] font-normal py-0.5 bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300"
-                                >
-                                  {str}
-                                </Badge>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {liveMentorFeedback.growthAreas && liveMentorFeedback.growthAreas.length > 0 && (
-                          <div className="space-y-1.5">
-                            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-                              <TrendingUp className="h-3.5 w-3.5 text-blue-600" /> Focus Areas for Growth
-                            </span>
-                            <div className="flex flex-wrap gap-1.5">
-                              {liveMentorFeedback.growthAreas.map((area) => (
-                                <Badge
-                                  key={area}
-                                  variant="outline"
-                                  className="text-[11px] font-normal py-0.5 bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300"
-                                >
-                                  {area}
-                                </Badge>
-                              ))}
-                            </div>
-                          </div>
-                        )}
                       </div>
                     </CardContent>
 
                     <CardFooter className="p-3 bg-muted/20 border-t border-border/40 flex justify-between items-center text-[11px] text-muted-foreground">
                       <div className="flex items-center gap-1.5">
                         <Radio className="h-3 w-3 text-emerald-600" />
-                        <span>Shared live notes area during your 1:1 meeting. Updates stream live without refreshing.</span>
+                        <span>Shared live feedback workspace during your 1:1 meeting. Updates stream live without refreshing.</span>
                       </div>
                       <Button variant="ghost" size="sm" asChild className="h-7 text-xs text-primary">
                         <Link href={`/team-dashboard/member/${activeEmployeeId}${selectedCycleId ? `?cycleId=${selectedCycleId}` : ''}`} target="_blank">
@@ -883,138 +1076,16 @@ export default function DashboardPage() {
                     </CardFooter>
                   </Card>
                 ) : (
-                  <Card className="border-dashed p-6 text-center">
-                    <Sparkles className="mx-auto h-8 w-8 text-muted-foreground mb-2" />
-                    <h3 className="text-sm font-semibold text-foreground">Waiting for 1:1 Session to Begin</h3>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Once your Mentor / Team Lead starts your 1:1 session or shares feedback, it will appear here in real time.
-                    </p>
-                  </Card>
-                )}
-
-                {/* ANONYMOUS PEER FEEDBACK RECEIVED (COLLATED BY QUESTION) */}
-                {receivedQuestions.length > 0 ? (
-                  <Card className="border border-border bg-card shadow-sm mt-4">
-                    <CardHeader
-                      onClick={() => setShowPeerFeedback(!showPeerFeedback)}
-                      className="p-4 cursor-pointer select-none bg-muted/20 hover:bg-muted/30 transition-colors border-b border-border/40 flex flex-row items-center justify-between"
-                    >
-                      <div className="space-y-0.5">
-                        <div className="flex items-center gap-2">
-                          <CardTitle className="text-sm font-semibold font-headline flex items-center gap-1.5">
-                            <Layers className="h-3.5 w-3.5 text-primary" />
-                            Collated Peer Feedback Received ({receivedQuestions.length} Question{receivedQuestions.length !== 1 ? 's' : ''})
-                          </CardTitle>
-                          <Badge variant="outline" className="text-[10px] font-medium border-emerald-300 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 flex items-center gap-1">
-                            <Lock className="h-2.5 w-2.5" /> 100% Anonymous
-                          </Badge>
-                          <Badge variant="outline" className="text-[10px] font-medium border-primary/30 bg-primary/5 text-primary flex items-center gap-1">
-                            <CheckCircle2 className="h-2.5 w-2.5 text-primary" /> Mentor Approved
-                          </Badge>
-                        </div>
-                        <CardDescription className="text-xs">
-                          Anonymous peer feedback curated and approved by your mentor for this cycle, grouped by question.
-                        </CardDescription>
+                  <Card className="border-dashed p-8 text-center bg-card">
+                    <div className="max-w-md mx-auto space-y-3">
+                      <div className="h-12 w-12 rounded-full bg-primary/10 text-primary flex items-center justify-center mx-auto">
+                        <Sparkles className="h-6 w-6" />
                       </div>
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground shrink-0">
-                        {showPeerFeedback ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                      </Button>
-                    </CardHeader>
-
-                    {showPeerFeedback && (
-                      <CardContent className="p-4 sm:p-6 space-y-5">
-                        <div className="p-3 rounded-lg bg-muted/40 border border-border/50 text-xs text-muted-foreground flex items-center gap-2">
-                          <Lock className="h-4 w-4 text-primary shrink-0" />
-                          <span>
-                            <strong>Anonymous Feedback Policy:</strong> Peer feedback is aggregated question-by-question without reviewer names or identifiable attributes to ensure candid, authentic growth discussions. Only mentor-approved feedback is visible.
-                          </span>
-                        </div>
-
-                        <div className="space-y-4">
-                          {receivedQuestions.map((q) => (
-                            <div key={q.questionId} className="rounded-lg border border-border/70 bg-card p-4 space-y-3">
-                              <div className="flex items-start gap-2.5">
-                                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-bold mt-0.5">
-                                  Q{q.order}
-                                </span>
-                                <div className="space-y-0.5">
-                                  {q.category && (
-                                    <Badge variant="outline" className="text-[10px] uppercase font-semibold tracking-wider text-muted-foreground">
-                                      {q.category}
-                                    </Badge>
-                                  )}
-                                  <h4 className="text-xs font-semibold text-foreground">{q.questionText}</h4>
-                                </div>
-                              </div>
-
-                              {/* Self Answer */}
-                              {q.selfAnswer && (
-                                <div className="pl-8 text-xs p-2.5 rounded bg-emerald-50/20 border border-emerald-200/50 text-foreground">
-                                  <span className="font-semibold text-emerald-800 dark:text-emerald-300 block text-[11px] mb-0.5">
-                                    Your Self-Assessment:
-                                  </span>
-                                  <p className="italic text-foreground/90">&ldquo;{q.selfAnswer}&rdquo;</p>
-                                </div>
-                              )}
-
-                              {/* Anonymous Peer Answers */}
-                              <div className="pl-8 space-y-2 pt-1">
-                                <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
-                                  Anonymous Peer Responses ({q.peerAnswers.length})
-                                </span>
-                                <div className="grid gap-2 sm:grid-cols-2">
-                                  {q.peerAnswers.map((peer, pIdx) => (
-                                    <div
-                                      key={peer.id || pIdx}
-                                      className="p-3 rounded-md border border-border/50 bg-muted/20 space-y-1.5 text-xs"
-                                    >
-                                      <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-1.5">
-                                          <span className="font-semibold text-foreground text-[11px] flex items-center gap-1.5">
-                                            <Lock className="h-3 w-3 text-muted-foreground" />
-                                            Anonymous Peer #{pIdx + 1}
-                                          </span>
-                                          {peer.isEdited && (
-                                            <Badge variant="outline" className="text-[9px] py-0 px-1 border-blue-200 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
-                                              Edited by Mentor
-                                            </Badge>
-                                          )}
-                                        </div>
-                                        {peer.sentiment && (
-                                          <Badge
-                                            variant="outline"
-                                            className={`text-[9px] py-0 px-1.5 ${
-                                              peer.sentiment === 'positive'
-                                                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                                                : peer.sentiment === 'constructive'
-                                                ? 'border-blue-200 bg-blue-50 text-blue-700'
-                                                : 'border-slate-200 bg-slate-100 text-slate-700'
-                                            }`}
-                                          >
-                                            {peer.sentiment === 'positive' ? 'Positive' : peer.sentiment === 'constructive' ? 'Growth' : 'Neutral'}
-                                          </Badge>
-                                        )}
-                                      </div>
-                                      <p className="text-muted-foreground italic text-[11px] leading-relaxed">
-                                        &ldquo;{peer.answerText}&rdquo;
-                                      </p>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </CardContent>
-                    )}
-                  </Card>
-                ) : (
-                  <Card className="border-dashed p-5 text-center mt-4 bg-muted/10">
-                    <Lock className="mx-auto h-7 w-7 text-muted-foreground mb-2" />
-                    <h3 className="text-xs font-semibold text-foreground">Peer Feedback Under Mentor Review</h3>
-                    <p className="text-[11px] text-muted-foreground mt-1 max-w-md mx-auto">
-                      Anonymous peer reviews for this cycle are currently being curated and approved by your mentor. Approved feedback will appear here once released.
-                    </p>
+                      <h3 className="text-base font-semibold text-foreground">Waiting for 1:1 Session to Begin</h3>
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        Once your Mentor / Team Lead starts your 1:1 session or shares feedback, discussion notes, agreed milestones, and collated peer feedback will stream here in real time.
+                      </p>
+                    </div>
                   </Card>
                 )}
               </div>

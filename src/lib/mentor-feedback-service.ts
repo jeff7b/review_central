@@ -27,320 +27,62 @@ function toISOString(val: unknown): string {
 // In-memory store fallback for development / offline environments
 const inMemoryMentorFeedback = new Map<string, MentorFeedback>();
 
-// Initial mock collations for team members
-const mockCollatedDataByEmployeeId: Record<string, {
-  employee: { id: string; name: string; email: string; avatarUrl: string; role: 'employee'; mentorName: string; mentorRole: string };
-  collatedQuestions: QuestionFeedbackCollation[];
-  initialFeedback: MentorFeedback;
-}> = {
-  tm1: {
-    employee: {
-      id: 'tm1',
-      name: 'Alice Wonderland',
-      email: 'alice.wonderland@example.com',
-      avatarUrl: 'https://placehold.co/100x100.png?text=AW',
-      role: 'employee',
-      mentorName: 'Diana Prince',
-      mentorRole: 'Engineering Director / Lead',
-    },
-    initialFeedback: {
-      id: 'mf-tm1',
-      employeeId: 'tm1',
-      employeeName: 'Alice Wonderland',
-      mentorId: 'tm4',
-      mentorName: 'Diana Prince',
-      mentorRole: 'Engineering Director',
-      cycleId: 'cycle-2024-h2',
-      cycleName: 'FY2024 H2 Review Cycle',
-      sharedNotes: 'Alice had a standout performance this half. Her leadership in migrating our core authentication services was recognized across engineering. In our 1:1 discussion, we aligned on her path towards Staff Engineer, specifically expanding her influence into cross-team system design and mentoring upcoming engineers.',
-      strengths: [
-        'High technical craftsmanship & zero-defect delivery',
-        'Exceptional cross-functional communication during incidents',
-        'Proactive architectural documentation'
-      ],
-      growthAreas: [
-        'Strategic thinking & multi-quarter project scoping',
-        'Delegating sub-tasks to junior engineers rather than solo execution'
-      ],
-      actionItems: [
-        { id: 'ai-1', text: 'Lead the Q4 architecture review for the multi-tenant event pipeline', completed: false },
-        { id: 'ai-2', text: 'Formalize 1:1 mentorship schedule with 2 junior team members', completed: true },
-        { id: 'ai-3', text: 'Present auth migration retro at the Engineering All-Hands meeting', completed: false },
-      ],
-      isShared: true,
-      lastUpdated: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
-      status: 'in_meeting',
-    },
-    collatedQuestions: [
-      {
-        questionId: 'q1',
-        questionText: 'How has this team member contributed to core team goals and deliverables?',
-        order: 1,
-        category: 'Execution & Impact',
-        selfAnswer: 'I spearheaded the auth middleware refactor and hit all sprint milestones 2 weeks ahead of our target deadline. I also reduced CI/CD test pipeline build runtimes by 20% through smart test sharding.',
-        selfAnswerSubmittedAt: '2024-09-12T14:20:00Z',
-        peerAnswers: [
-          {
-            reviewerId: 'tm2',
-            reviewerName: 'Bob The Builder',
-            reviewerAvatarUrl: 'https://placehold.co/100x100.png?text=BB',
-            reviewerRole: 'Senior Software Engineer',
-            answerText: 'Alice was instrumental in unblocking our release candidate. Her architectural decisions on the auth migration were clean, bulletproof, and made integrating downstream services effortless.',
-            sentiment: 'positive',
-            submittedAt: '2024-09-13T10:15:00Z',
-          },
-          {
-            reviewerId: 'tm3',
-            reviewerName: 'Charlie Brown',
-            reviewerAvatarUrl: 'https://placehold.co/100x100.png?text=CB',
-            reviewerRole: 'Software Engineer',
-            answerText: 'Consistently provides prompt reviews and reliably finishes her sprint commitments. Whenever there was a priority fire, Alice stepped up immediately to diagnose and patch it.',
-            sentiment: 'positive',
-            submittedAt: '2024-09-14T09:45:00Z',
-          },
-          {
-            reviewerId: 'tm4',
-            reviewerName: 'Diana Prince',
-            reviewerAvatarUrl: 'https://placehold.co/100x100.png?text=DP',
-            reviewerRole: 'Engineering Director',
-            answerText: 'Alice consistently sets the gold standard for high execution quality on the team. Deliverables are always well tested, robust, and delivered with clear stakeholder communications.',
-            sentiment: 'positive',
-            submittedAt: '2024-09-14T16:30:00Z',
-          },
-          {
-            reviewerId: 'tm5',
-            reviewerName: 'Alex Chen',
-            reviewerAvatarUrl: 'https://placehold.co/100x100.png?text=AC',
-            reviewerRole: 'Product Designer',
-            answerText: 'Great partner during feature discovery. Alice always brought sensible technical feasibility considerations early, preventing costly redesigns later in the sprint.',
-            sentiment: 'positive',
-            submittedAt: '2024-09-15T11:00:00Z',
-          },
-        ],
-      },
-      {
-        questionId: 'q2',
-        questionText: 'Describe a situation where this person demonstrated strong teamwork and collaboration.',
-        order: 2,
-        category: 'Collaboration',
-        selfAnswer: 'During the high-severity production sync failure in August, I coordinated with DevOps and QA to isolate the root cause, establish a hotfix branch, and document preventive safeguards.',
-        selfAnswerSubmittedAt: '2024-09-12T14:25:00Z',
-        peerAnswers: [
-          {
-            reviewerId: 'tm2',
-            reviewerName: 'Bob The Builder',
-            reviewerAvatarUrl: 'https://placehold.co/100x100.png?text=BB',
-            reviewerRole: 'Senior Software Engineer',
-            answerText: 'Alice paired with me for two hours when I was struggling with complex Firestore security rule propagation. She was remarkably patient and explained the underlying authentication mechanics clearly.',
-            sentiment: 'positive',
-            submittedAt: '2024-09-13T10:20:00Z',
-          },
-          {
-            reviewerId: 'tm3',
-            reviewerName: 'Charlie Brown',
-            reviewerAvatarUrl: 'https://placehold.co/100x100.png?text=CB',
-            reviewerRole: 'Software Engineer',
-            answerText: 'Very approachable in Slack and Teams. Even during crunch times, she never hesitates to jump on a huddle to debug code together.',
-            sentiment: 'positive',
-            submittedAt: '2024-09-14T09:50:00Z',
-          },
-          {
-            reviewerId: 'tm4',
-            reviewerName: 'Diana Prince',
-            reviewerAvatarUrl: 'https://placehold.co/100x100.png?text=DP',
-            reviewerRole: 'Engineering Director',
-            answerText: 'Facilitated several cross-team syncs with product and security teams smoothly, ensuring all security compliance requirements were addressed without delaying our launch.',
-            sentiment: 'positive',
-            submittedAt: '2024-09-14T16:35:00Z',
-          },
-        ],
-      },
-      {
-        questionId: 'q3',
-        questionText: 'What are this team member\'s key strengths and capabilities from your perspective?',
-        order: 3,
-        category: 'Strengths',
-        selfAnswer: 'Deep problem-solving rigor, automated testing practices, and a strong drive to simplify complicated backend architectures for the rest of the team.',
-        selfAnswerSubmittedAt: '2024-09-12T14:30:00Z',
-        peerAnswers: [
-          {
-            reviewerId: 'tm2',
-            reviewerName: 'Bob The Builder',
-            reviewerAvatarUrl: 'https://placehold.co/100x100.png?text=BB',
-            reviewerRole: 'Senior Software Engineer',
-            answerText: 'Superb code quality, lightning fast PR review feedback, and deep mastery of TypeScript and cloud data structures.',
-            sentiment: 'positive',
-            submittedAt: '2024-09-13T10:25:00Z',
-          },
-          {
-            reviewerId: 'tm3',
-            reviewerName: 'Charlie Brown',
-            reviewerAvatarUrl: 'https://placehold.co/100x100.png?text=CB',
-            reviewerRole: 'Software Engineer',
-            answerText: 'Extremely calm under pressure. Whenever production incidents occur, Alice brings clarity, structured troubleshooting, and rapid solutions.',
-            sentiment: 'positive',
-            submittedAt: '2024-09-14T09:55:00Z',
-          },
-          {
-            reviewerId: 'tm4',
-            reviewerName: 'Diana Prince',
-            reviewerAvatarUrl: 'https://placehold.co/100x100.png?text=DP',
-            reviewerRole: 'Engineering Director',
-            answerText: 'High agency, technical depth, and relentless focus on reliability and developer ergonomics.',
-            sentiment: 'positive',
-            submittedAt: '2024-09-14T16:40:00Z',
-          },
-        ],
-      },
-      {
-        questionId: 'q4',
-        questionText: 'In what areas could this peer improve, develop, or expand their impact further?',
-        order: 4,
-        category: 'Growth & Development',
-        selfAnswer: 'I tend to take on heavy architecture tasks entirely myself instead of breaking them down for others. I want to improve my delegation and spend more time coaching newer engineers.',
-        selfAnswerSubmittedAt: '2024-09-12T14:35:00Z',
-        peerAnswers: [
-          {
-            reviewerId: 'tm2',
-            reviewerName: 'Bob The Builder',
-            reviewerAvatarUrl: 'https://placehold.co/100x100.png?text=BB',
-            reviewerRole: 'Senior Software Engineer',
-            answerText: 'Sometimes Alice carries too much of the cognitive load alone. It would be great to see her delegate more sub-components to the rest of the team so we can learn from her.',
-            sentiment: 'constructive',
-            submittedAt: '2024-09-13T10:30:00Z',
-          },
-          {
-            reviewerId: 'tm4',
-            reviewerName: 'Diana Prince',
-            reviewerAvatarUrl: 'https://placehold.co/100x100.png?text=DP',
-            reviewerRole: 'Engineering Director',
-            answerText: 'Could focus more on communicating high-level technical vision to executive stakeholders and non-technical partners, articulating business outcomes alongside technical achievements.',
-            sentiment: 'constructive',
-            submittedAt: '2024-09-14T16:45:00Z',
-          },
-        ],
-      },
-      {
-        questionId: 'q5',
-        questionText: 'Provide any additional feedback or recommendations to support their ongoing growth.',
-        order: 5,
-        category: 'General / Career Path',
-        selfAnswer: 'Looking forward to taking on broader system architecture responsibility and continuing to partner closely with leadership on technology strategy.',
-        selfAnswerSubmittedAt: '2024-09-12T14:40:00Z',
-        peerAnswers: [
-          {
-            reviewerId: 'tm2',
-            reviewerName: 'Bob The Builder',
-            reviewerAvatarUrl: 'https://placehold.co/100x100.png?text=BB',
-            reviewerRole: 'Senior Software Engineer',
-            answerText: 'A pleasure to work with every single day! Alice is definitely ready for senior leadership responsibilities.',
-            sentiment: 'positive',
-            submittedAt: '2024-09-13T10:35:00Z',
-          },
-          {
-            reviewerId: 'tm4',
-            reviewerName: 'Diana Prince',
-            reviewerAvatarUrl: 'https://placehold.co/100x100.png?text=DP',
-            reviewerRole: 'Engineering Director',
-            answerText: 'Keep fostering the open engineering culture you have helped build. We are excited to support your path to Staff Engineer in the upcoming cycle.',
-            sentiment: 'positive',
-            submittedAt: '2024-09-14T16:50:00Z',
-          },
-        ],
-      },
-    ],
-  },
-  tm2: {
-    employee: {
-      id: 'tm2',
-      name: 'Bob The Builder',
-      email: 'bob.builder@example.com',
-      avatarUrl: 'https://placehold.co/100x100.png?text=BB',
-      role: 'employee',
-      mentorName: 'Diana Prince',
-      mentorRole: 'Engineering Director / Lead',
-    },
-    initialFeedback: {
-      id: 'mf-tm2',
-      employeeId: 'tm2',
-      employeeName: 'Bob The Builder',
-      mentorId: 'tm4',
-      mentorName: 'Diana Prince',
-      mentorRole: 'Engineering Director',
-      cycleId: 'cycle-2024-h2',
-      cycleName: 'FY2024 H2 Review Cycle',
-      sharedNotes: 'Bob has demonstrated deep technical skills and solid delivery across frontend infrastructure. During our session, we discussed strengthening proactive stakeholder communication and structuring daily updates to avoid end-of-sprint crunches.',
-      strengths: [
-        'Solid domain knowledge and frontend build optimization',
-        'Willingness to tackle thorny legacy bugs',
-      ],
-      growthAreas: [
-        'Stakeholder and non-technical communication',
-        'Time estimation and progressive sprint delivery',
-      ],
-      actionItems: [
-        { id: 'ai-b1', text: 'Share twice-weekly async progress updates on #eng-announcements', completed: false },
-        { id: 'ai-b2', text: 'Partner with product manager on user story acceptance criteria prior to sprint kickoff', completed: true },
-      ],
-      isShared: true,
-      lastUpdated: new Date(Date.now() - 1000 * 60 * 60).toISOString(),
-      status: 'in_meeting',
-    },
-    collatedQuestions: [
-      {
-        questionId: 'q1',
-        questionText: 'How has this team member contributed to core team goals and deliverables?',
-        order: 1,
-        category: 'Execution & Impact',
-        selfAnswer: 'Focused on UI component library refactoring and resolved 14 long-standing UI layout defects.',
-        selfAnswerSubmittedAt: '2024-09-10T11:00:00Z',
-        peerAnswers: [
-          {
-            reviewerId: 'tm1',
-            reviewerName: 'Alice Wonderland',
-            reviewerAvatarUrl: 'https://placehold.co/100x100.png?text=AW',
-            reviewerRole: 'Lead Software Engineer',
-            answerText: 'Bob did great work modernizing our form validation components. Code quality is consistently high.',
-            sentiment: 'positive',
-            submittedAt: '2024-09-12T15:00:00Z',
-          },
-        ],
-      },
-      {
-        questionId: 'q2',
-        questionText: 'Describe a situation where this person demonstrated strong teamwork and collaboration.',
-        order: 2,
-        category: 'Collaboration',
-        selfAnswer: 'Collaborated with Alice on aligning the API payload contracts for review forms.',
-        selfAnswerSubmittedAt: '2024-09-10T11:15:00Z',
-        peerAnswers: [
-          {
-            reviewerId: 'tm1',
-            reviewerName: 'Alice Wonderland',
-            reviewerAvatarUrl: 'https://placehold.co/100x100.png?text=AW',
-            reviewerRole: 'Lead Software Engineer',
-            answerText: 'Active in PR discussions and responsive to design changes during feature development.',
-            sentiment: 'positive',
-            submittedAt: '2024-09-12T15:10:00Z',
-          },
-        ],
-      },
-    ],
-  },
-};
-
 /**
  * Retrieves the member profile and collated feedback grouped by question.
- * Dynamically queries Firestore peer-reviews, peer-review-assignments, self-reviews,
- * and questionnaires, and overlays mentor approvals and inline edits.
+ * Dynamically queries Firestore review-cycles, users, peer-reviews,
+ * peer-review-assignments, self-reviews, team-insights, and questionnaires,
+ * and overlays mentor approvals and inline edits.
  */
 export async function getMemberFeedbackProfile(employeeId: string, cycleId?: string) {
-  // 1. Fetch user profile from Firestore
+  // 1. Resolve Review Cycle from Firestore
+  let resolvedCycle: { id: string; name: string; status: string; peerReviewQuestionnaireId?: string | null } | undefined = undefined;
+
+  try {
+    if (cycleId) {
+      const cycleDoc = await adminDb.collection('review-cycles').doc(cycleId).get().catch(() => null);
+      if (cycleDoc && cycleDoc.exists) {
+        const cData = cycleDoc.data()!;
+        resolvedCycle = {
+          id: cycleDoc.id,
+          name: cData.name || 'Performance Review Cycle',
+          status: cData.status || 'active',
+          peerReviewQuestionnaireId: cData.peerReviewQuestionnaireId || null,
+        };
+      }
+    }
+
+    if (!resolvedCycle) {
+      // Find active cycle, or fall back to most recent cycle
+      const cyclesSnap = await adminDb.collection('review-cycles').get().catch(() => null);
+      if (cyclesSnap && !cyclesSnap.empty) {
+        const cycles = cyclesSnap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
+        const activeCycle = cycles.find(c => c.status === 'active') || cycles[0];
+        if (activeCycle) {
+          resolvedCycle = {
+            id: activeCycle.id,
+            name: activeCycle.name || 'Active Review Cycle',
+            status: activeCycle.status || 'active',
+            peerReviewQuestionnaireId: activeCycle.peerReviewQuestionnaireId || null,
+          };
+        }
+      }
+    }
+  } catch (err) {
+    console.warn(`Failed to resolve review cycle:`, err);
+  }
+
+  const effectiveCycleId = resolvedCycle?.id || cycleId;
+  const effectiveCycleName = resolvedCycle?.name || 'Performance Review Cycle';
+
+  // 2. Fetch user profile and mentor information from Firestore
   let employeeName = `Team Member (${employeeId})`;
   let employeeEmail = `${employeeId}@example.com`;
   let employeeAvatar = `https://placehold.co/100x100.png?text=${employeeId.slice(0, 2).toUpperCase()}`;
+  let employeeRole: 'employee' | 'team_leader' | 'admin' = 'employee';
+  let mentorId = 'lead-1';
   let mentorName = 'Team Lead / Mentor';
   let mentorRole = 'Engineering Manager';
+  let mentorAvatarUrl: string | undefined = undefined;
 
   try {
     const userDoc = await adminDb.collection('users').doc(employeeId).get();
@@ -349,13 +91,16 @@ export async function getMemberFeedbackProfile(employeeId: string, cycleId?: str
       employeeName = data.name || employeeName;
       employeeEmail = data.email || employeeEmail;
       employeeAvatar = data.avatarUrl || employeeAvatar;
+      employeeRole = data.role || 'employee';
 
       if (data.mentorId) {
+        mentorId = data.mentorId;
         const mentorDoc = await adminDb.collection('users').doc(data.mentorId).get().catch(() => null);
         if (mentorDoc && mentorDoc.exists) {
           const mData = mentorDoc.data() as User;
           mentorName = mData.name || mentorName;
           mentorRole = mData.role === 'admin' ? 'Administrator / Lead' : 'Team Lead / Mentor';
+          mentorAvatarUrl = mData.avatarUrl;
         }
       }
     }
@@ -363,31 +108,37 @@ export async function getMemberFeedbackProfile(employeeId: string, cycleId?: str
     console.warn(`Firestore user lookup failed for ${employeeId}:`, err);
   }
 
-  // 2. Fetch live MentorFeedback state
+  // 3. Fetch live MentorFeedback state
   const liveFeedback = await getMentorFeedback(employeeId);
   const approvedIdsSet = new Set<string>(liveFeedback?.approvedResponseIds || []);
   const editedMap = liveFeedback?.editedResponses || {};
 
-  // 3. Attempt to fetch real reviews from Firestore
-  let realCollatedQuestions: QuestionFeedbackCollation[] = [];
+  // 4. Fetch self review from Firestore and determine selfReviewStatus
+  let selfReviewStatus: 'not_started' | 'draft' | 'submitted' = 'not_started';
+  let selfAnswersMap: Record<string, { answerText: string; submittedAt?: string }> = {};
 
   try {
-    // 3a. Fetch self review
     let selfReviewQuery = adminDb.collection('reviews')
       .where('type', '==', 'self')
       .where('revieweeId', '==', employeeId);
 
-    if (cycleId) {
-      selfReviewQuery = selfReviewQuery.where('reviewCycleId', '==', cycleId);
+    if (effectiveCycleId) {
+      selfReviewQuery = selfReviewQuery.where('reviewCycleId', '==', effectiveCycleId);
     }
 
     const selfSnap = await selfReviewQuery.limit(1).get().catch(() => null);
-    let selfAnswersMap: Record<string, { answerText: string; submittedAt?: string }> = {};
 
     if (selfSnap && !selfSnap.empty) {
-      const sDoc = selfSnap.docs[0].data();
+      const sDoc = selfSnap.docs[0].data() as Review;
       const sAnswers = sDoc.answers || [];
       const sSubmittedAt = toISOString(sDoc.updatedAt || sDoc.createdAt);
+
+      if (sDoc.status === 'submitted' || sDoc.status === 'completed') {
+        selfReviewStatus = 'submitted';
+      } else if (sDoc.status === 'draft') {
+        selfReviewStatus = 'draft';
+      }
+
       sAnswers.forEach((a: any) => {
         if (a.questionId) {
           selfAnswersMap[a.questionId] = {
@@ -397,24 +148,26 @@ export async function getMemberFeedbackProfile(employeeId: string, cycleId?: str
         }
       });
     }
+  } catch (err) {
+    console.warn(`Error querying self-review for ${employeeId}:`, err);
+  }
 
-    // 3b. Fetch completed peer review assignments where user is reviewee
+  // 5. Attempt to fetch completed peer reviews from Firestore
+  let realCollatedQuestions: QuestionFeedbackCollation[] = [];
+  const questionnaireCache = new Map<string, Questionnaire>();
+
+  try {
     let peerReceivedQuery = adminDb.collection('peer-review-assignments')
       .where('revieweeId', '==', employeeId);
 
-    if (cycleId) {
-      peerReceivedQuery = peerReceivedQuery.where('reviewCycleId', '==', cycleId);
+    if (effectiveCycleId) {
+      peerReceivedQuery = peerReceivedQuery.where('reviewCycleId', '==', effectiveCycleId);
     }
 
     const peerAssignmentsSnap = await peerReceivedQuery.get().catch(() => null);
-
-    // Map to collect questions: questionId -> QuestionFeedbackCollation
     const questionMap = new Map<string, QuestionFeedbackCollation>();
 
     if (peerAssignmentsSnap && !peerAssignmentsSnap.empty) {
-      // Collect questionnaire templates to ensure questions are properly named & ordered
-      const questionnaireCache = new Map<string, Questionnaire>();
-
       for (const aDoc of peerAssignmentsSnap.docs) {
         const assignment = aDoc.data() as PeerReviewAssignment;
         if (assignment.status !== 'completed' || !assignment.reviewId) continue;
@@ -488,124 +241,84 @@ export async function getMemberFeedbackProfile(employeeId: string, cycleId?: str
         q.isApprovedForSharing = q.peerAnswers.some(p => p.isApproved);
       });
     }
+
+    // 6. If no peer reviews are completed yet, check if a template questionnaire is assigned to the cycle
+    if (realCollatedQuestions.length === 0 && resolvedCycle?.peerReviewQuestionnaireId) {
+      const qId = resolvedCycle.peerReviewQuestionnaireId;
+      let questionnaire = questionnaireCache.get(qId);
+      if (!questionnaire) {
+        const qDoc = await adminDb.collection('questionnaires').doc(qId).get().catch(() => null);
+        if (qDoc && qDoc.exists) {
+          questionnaire = { id: qDoc.id, ...qDoc.data() } as Questionnaire;
+          questionnaireCache.set(qId, questionnaire);
+        }
+      }
+
+      if (questionnaire?.questions && questionnaire.questions.length > 0) {
+        realCollatedQuestions = questionnaire.questions.map((q, idx) => {
+          const selfInfo = selfAnswersMap[q.id];
+          return {
+            questionId: q.id,
+            questionText: q.text,
+            order: q.order ?? (idx + 1),
+            category: (q as any).category || undefined,
+            selfAnswer: selfInfo?.answerText,
+            selfAnswerSubmittedAt: selfInfo?.submittedAt,
+            peerAnswers: [],
+            isApprovedForSharing: false,
+          };
+        }).sort((a, b) => a.order - b.order);
+      }
+    }
   } catch (err) {
     console.error('Error dynamically collating peer reviews from Firestore:', err);
   }
 
-  // 4. Fallback to mock data if Firestore has no submitted peer reviews yet
-  let finalQuestions: QuestionFeedbackCollation[] = [];
+  // 7. Query AI Insights from Firestore 'team-insights' collection
+  let aiInsights: {
+    summary?: string;
+    sentiment?: 'positive' | 'neutral' | 'negative' | 'mixed';
+    strengths: string[];
+    growthAreas: string[];
+  } | undefined = undefined;
 
-  if (realCollatedQuestions.length > 0) {
-    finalQuestions = realCollatedQuestions;
-  } else if (mockCollatedDataByEmployeeId[employeeId]) {
-    const mock = mockCollatedDataByEmployeeId[employeeId];
-    finalQuestions = mock.collatedQuestions.map((q) => ({
-      ...q,
-      peerAnswers: q.peerAnswers.map((p, pIdx) => {
-        const respId = `resp-${employeeId}-${q.questionId}-${pIdx}`;
-        const originalText = p.answerText;
-        const editedText = editedMap[respId];
-        const isApproved = approvedIdsSet.has(respId);
+  try {
+    let insightsQuery = adminDb.collection('team-insights')
+      .where('memberId', '==', employeeId) as FirebaseFirestore.Query;
 
-        return {
-          ...p,
-          id: respId,
-          originalAnswerText: originalText,
-          answerText: editedText !== undefined ? editedText : originalText,
-          isEdited: editedText !== undefined && editedText !== originalText,
-          isApproved,
-        };
-      }),
-      isApprovedForSharing: q.peerAnswers.some((_, pIdx) =>
-        approvedIdsSet.has(`resp-${employeeId}-${q.questionId}-${pIdx}`)
-      ),
-    }));
-  } else {
-    // Default fallback questions with generated response IDs
-    const defaultQs: QuestionFeedbackCollation[] = [
-      {
-        questionId: 'q1',
-        questionText: 'How has this team member contributed to core team goals and deliverables?',
-        order: 1,
-        category: 'Execution & Impact',
-        selfAnswer: 'Maintained steady progress across all sprint backlog items and addressed reported bugs promptly.',
-        peerAnswers: [
-          {
-            id: `resp-${employeeId}-q1-0`,
-            reviewerId: 'peer-1',
-            reviewerName: 'Peer Reviewer 1',
-            reviewerAvatarUrl: 'https://placehold.co/100x100.png?text=P1',
-            answerText: editedMap[`resp-${employeeId}-q1-0`] || 'Reliable team contributor who completes tasks with solid code quality.',
-            originalAnswerText: 'Reliable team contributor who completes tasks with solid code quality.',
-            isEdited: !!editedMap[`resp-${employeeId}-q1-0`],
-            isApproved: approvedIdsSet.has(`resp-${employeeId}-q1-0`),
-            sentiment: 'positive',
-          },
-        ],
-      },
-      {
-        questionId: 'q2',
-        questionText: 'Describe a situation where this person demonstrated strong teamwork and collaboration.',
-        order: 2,
-        category: 'Collaboration',
-        selfAnswer: 'Participated actively in daily standups and sprint retrospectives.',
-        peerAnswers: [
-          {
-            id: `resp-${employeeId}-q2-0`,
-            reviewerId: 'peer-2',
-            reviewerName: 'Peer Reviewer 2',
-            reviewerAvatarUrl: 'https://placehold.co/100x100.png?text=P2',
-            answerText: editedMap[`resp-${employeeId}-q2-0`] || 'Constructive collaborator during code reviews and always ready to help team members.',
-            originalAnswerText: 'Constructive collaborator during code reviews and always ready to help team members.',
-            isEdited: !!editedMap[`resp-${employeeId}-q2-0`],
-            isApproved: approvedIdsSet.has(`resp-${employeeId}-q2-0`),
-            sentiment: 'positive',
-          },
-        ],
-      },
-      {
-        questionId: 'q3',
-        questionText: 'In what areas could this peer improve, develop, or expand their impact further?',
-        order: 3,
-        category: 'Growth & Development',
-        selfAnswer: 'Aiming to expand knowledge in system architecture and technical leadership.',
-        peerAnswers: [
-          {
-            id: `resp-${employeeId}-q3-0`,
-            reviewerId: 'peer-1',
-            reviewerName: 'Peer Reviewer 1',
-            reviewerAvatarUrl: 'https://placehold.co/100x100.png?text=P1',
-            answerText: editedMap[`resp-${employeeId}-q3-0`] || 'Would love to see them take ownership of leading larger end-to-end features.',
-            originalAnswerText: 'Would love to see them take ownership of leading larger end-to-end features.',
-            isEdited: !!editedMap[`resp-${employeeId}-q3-0`],
-            isApproved: approvedIdsSet.has(`resp-${employeeId}-q3-0`),
-            sentiment: 'constructive',
-          },
-        ],
-      },
-    ];
-    defaultQs.forEach(q => {
-      q.isApprovedForSharing = q.peerAnswers.some(p => p.isApproved);
-    });
-    finalQuestions = defaultQs;
+    if (effectiveCycleId) {
+      insightsQuery = insightsQuery.where('reviewCycleId', '==', effectiveCycleId);
+    }
+
+    const insightsSnap = await insightsQuery.limit(1).get().catch(() => null);
+    if (insightsSnap && !insightsSnap.empty) {
+      const insData = insightsSnap.docs[0].data();
+      aiInsights = {
+        summary: insData.feedbackSummary || undefined,
+        sentiment: insData.sentiment || undefined,
+        strengths: Array.isArray(insData.keyStrengths) ? insData.keyStrengths : [],
+        growthAreas: Array.isArray(insData.keyImprovementAreas) ? insData.keyImprovementAreas : [],
+      };
+    }
+  } catch (err) {
+    console.warn(`Failed to fetch team-insights for ${employeeId}:`, err);
   }
 
-  // 5. Initial MentorFeedback object if not existing
+  // 8. Initial / fallback MentorFeedback object
   const defaultFeedback: MentorFeedback = liveFeedback || {
     id: `mf-${employeeId}`,
     employeeId,
     employeeName,
-    mentorId: 'current-mentor',
+    mentorId,
     mentorName,
     mentorRole,
-    cycleId: cycleId || 'cycle-active',
-    cycleName: 'FY2024 H2 Review Cycle',
-    sharedNotes: 'Notes from the 1:1 mentor feedback session will appear here in real time as discussed during the meeting.',
-    strengths: ['High Technical Craftsmanship', 'Team Collaboration'],
-    growthAreas: ['Cross-team Communication', 'Mentoring Junior Engineers'],
-    actionItems: [
-      { id: 'ai-default-1', text: 'Define key professional development goals for this quarter', completed: false },
-    ],
+    mentorAvatarUrl,
+    cycleId: effectiveCycleId,
+    cycleName: effectiveCycleName,
+    sharedNotes: '',
+    strengths: [],
+    growthAreas: [],
+    actionItems: [],
     isShared: true,
     isPeerFeedbackShared: false,
     approvedResponseIds: [],
@@ -620,12 +333,19 @@ export async function getMemberFeedbackProfile(employeeId: string, cycleId?: str
       name: employeeName,
       email: employeeEmail,
       avatarUrl: employeeAvatar,
-      role: 'employee' as const,
+      role: employeeRole,
       mentorName,
       mentorRole,
     },
-    collatedQuestions: finalQuestions,
+    selfReviewStatus,
+    reviewCycle: resolvedCycle ? {
+      id: resolvedCycle.id,
+      name: resolvedCycle.name,
+      status: resolvedCycle.status,
+    } : undefined,
+    collatedQuestions: realCollatedQuestions,
     mentorFeedback: defaultFeedback,
+    aiInsights,
   };
 }
 
@@ -650,13 +370,6 @@ export async function getMentorFeedback(employeeId: string): Promise<MentorFeedb
     console.warn(`Firestore mentor-feedback read failed for ${employeeId}:`, err);
   }
 
-  // If mock exists, populate in-memory and return
-  if (mockCollatedDataByEmployeeId[employeeId]) {
-    const initial = mockCollatedDataByEmployeeId[employeeId].initialFeedback;
-    inMemoryMentorFeedback.set(employeeId, initial);
-    return initial;
-  }
-
   return null;
 }
 
@@ -674,6 +387,7 @@ export async function saveMentorFeedback(feedback: Partial<MentorFeedback> & { e
     mentorId: feedback.mentorId || existing?.mentorId || 'lead-1',
     mentorName: feedback.mentorName || existing?.mentorName || 'Team Lead',
     mentorRole: feedback.mentorRole || existing?.mentorRole || 'Team Leader / Mentor',
+    mentorAvatarUrl: feedback.mentorAvatarUrl || existing?.mentorAvatarUrl,
     cycleId: feedback.cycleId || existing?.cycleId || 'current-cycle',
     cycleName: feedback.cycleName || existing?.cycleName || 'Current Review Cycle',
     sharedNotes: feedback.sharedNotes !== undefined ? feedback.sharedNotes : (existing?.sharedNotes || ''),

@@ -107,6 +107,7 @@ export interface MentorFeedback {
   mentorId: string;
   mentorName: string;
   mentorRole?: string;
+  mentorAvatarUrl?: string;
   cycleId?: string;
   cycleName?: string;
   sharedNotes: string;
@@ -144,6 +145,34 @@ export interface QuestionFeedbackCollation {
   selfAnswerSubmittedAt?: string;
   peerAnswers: PeerQuestionResponse[];
   isApprovedForSharing?: boolean; // Convenience flag indicating whether any answers are approved
+}
+
+export interface MemberFeedbackAIInsights {
+  summary?: string;
+  sentiment?: 'positive' | 'neutral' | 'negative' | 'mixed';
+  strengths: string[];
+  growthAreas: string[];
+}
+
+export interface MemberFeedbackProfile {
+  employee: {
+    id: string;
+    name: string;
+    email: string;
+    avatarUrl: string;
+    role: 'employee' | 'team_leader' | 'admin';
+    mentorName: string;
+    mentorRole: string;
+  };
+  selfReviewStatus: 'not_started' | 'draft' | 'submitted';
+  reviewCycle?: {
+    id: string;
+    name: string;
+    status: string;
+  };
+  collatedQuestions: QuestionFeedbackCollation[];
+  mentorFeedback: MentorFeedback;
+  aiInsights?: MemberFeedbackAIInsights;
 }
 
 export interface PersonalNote {

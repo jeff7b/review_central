@@ -15,6 +15,7 @@ export function useLiveMentorFeedback({
   role = 'employee',
 }: UseLiveMentorFeedbackOptions) {
   const [feedback, setFeedback] = useState<MentorFeedback | null>(initialFeedback);
+  const [isLoading, setIsLoading] = useState<boolean>(!initialFeedback && !!employeeId);
   const [isConnected, setIsConnected] = useState<boolean>(false);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(
@@ -32,10 +33,14 @@ export function useLiveMentorFeedback({
   }, [feedback]);
 
   // Handle incoming remote feedback
-  const handleRemoteUpdate = useCallback((newFeedback: MentorFeedback) => {
-    // If the remote update is newer or different from local
+  const handleRemoteUpdate = useCallback((newFeedback: MentorFeedback | null) => {
+    setIsLoading(false);
+    if (!newFeedback) return;
     setFeedback((prev) => {
-      if (!prev) return newFeedback;
+      if (!prev) {
+        setLastSyncedAt(new Date(newFeedback.lastUpdated));
+        return newFeedback;
+      }
       // Compare lastUpdated
       const prevTime = new Date(prev.lastUpdated).getTime();
       const newTime = new Date(newFeedback.lastUpdated).getTime();
@@ -71,11 +76,33 @@ export function useLiveMentorFeedback({
     };
   }, [employeeId, handleRemoteUpdate]);
 
-  // 2. Setup Server-Sent Events (SSE) stream for live multi-device / network updates
+  // 2. Setup Server-Sent Events (SSE) stream for live multi-device / network updates and fetch initial feedback immediately
   useEffect(() => {
-    if (typeof window === 'undefined' || !employeeId) return;
+    if (typeof window === 'undefined' || !employeeId) {
+      setIsLoading(false);
+      return;
+    }
 
     let isMounted = true;
+    setIsLoading(true);
+
+    // Immediate initial fetch to avoid delay before first SSE or poll
+    fetch(`/api/mentor-feedback/${employeeId}`, {
+      headers: { 'Accept': 'application/json' },
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json) => {
+        if (isMounted) {
+          if (json && json.feedback) {
+            handleRemoteUpdate(json.feedback);
+          } else {
+            setIsLoading(false);
+          }
+        }
+      })
+      .catch((e) => {
+        if (isMounted) setIsLoading(false);
+      });
 
     function connectSSE() {
       try {
@@ -121,7 +148,7 @@ export function useLiveMentorFeedback({
         });
         if (res.ok) {
           const json = await res.json();
-          if (json.feedback && isMounted) {
+          if (json && json.feedback && isMounted) {
             handleRemoteUpdate(json.feedback);
             setIsConnected(true);
           }
@@ -218,6 +245,7 @@ export function useLiveMentorFeedback({
 
   return {
     feedback,
+    isLoading,
     setFeedback,
     saveFeedback,
     isConnected,

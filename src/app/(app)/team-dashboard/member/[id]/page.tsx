@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -62,7 +62,9 @@ import type { QuestionFeedbackCollation, MentorFeedback, MentorFeedbackActionIte
 export default function TeamMemberProfilePage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const memberId = (params?.id as string) || 'tm1';
+  const cycleId = searchParams?.get('cycleId') || undefined;
   const { toast } = useToast();
 
   const [isLoadingProfile, setIsLoadingProfile] = useState(true);
@@ -87,7 +89,7 @@ export default function TeamMemberProfilePage() {
     async function loadData() {
       setIsLoadingProfile(true);
       try {
-        const data = await getMemberFeedbackProfileAction(memberId);
+        const data = await getMemberFeedbackProfileAction(memberId, cycleId);
         setProfileData(data);
       } catch (err) {
         console.error('Error loading member profile:', err);
@@ -101,7 +103,7 @@ export default function TeamMemberProfilePage() {
       }
     }
     loadData();
-  }, [memberId, toast]);
+  }, [memberId, cycleId, toast]);
 
   // Connect to live mentor feedback sync
   const {
@@ -673,7 +675,7 @@ export default function TeamMemberProfilePage() {
       {/* Top Back Navigation & Action Bar */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <Button variant="ghost" size="sm" className="h-8 text-xs font-medium text-muted-foreground hover:text-foreground pl-0" asChild>
-          <Link href="/team-dashboard">
+          <Link href={cycleId ? `/team-dashboard?cycleId=${cycleId}` : "/team-dashboard"}>
             <ArrowLeft className="mr-1.5 h-3.5 w-3.5" /> Back to Team Dashboard
           </Link>
         </Button>
@@ -751,7 +753,7 @@ export default function TeamMemberProfilePage() {
                   </span>
                   <span>•</span>
                   <span>
-                    Cycle: <strong className="text-foreground font-medium">FY2024 H2 Performance Review</strong>
+                    Cycle: <strong className="text-foreground font-medium">{profileData.reviewCycle?.name || liveFeedback?.cycleName || 'Active Review Cycle'}</strong>
                   </span>
                 </div>
               </div>
@@ -763,9 +765,19 @@ export default function TeamMemberProfilePage() {
                 <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block">
                   Self-Review
                 </span>
-                <Badge variant="outline" className="mt-1 text-[11px] border-emerald-200 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 font-medium">
-                  Submitted
-                </Badge>
+                {profileData.selfReviewStatus === 'submitted' ? (
+                  <Badge variant="outline" className="mt-1 text-[11px] border-emerald-200 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 font-medium">
+                    Submitted
+                  </Badge>
+                ) : profileData.selfReviewStatus === 'draft' ? (
+                  <Badge variant="outline" className="mt-1 text-[11px] border-amber-200 bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 font-medium">
+                    In Draft
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="mt-1 text-[11px] border-rose-200 bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 font-medium">
+                    Not Started
+                  </Badge>
+                )}
               </div>
 
               <div className="p-3 rounded-lg bg-muted/40 border border-border/50 text-center">
@@ -815,18 +827,34 @@ export default function TeamMemberProfilePage() {
 
             {/* Questions List */}
             <div className="space-y-4 max-h-[800px] overflow-y-auto pr-1">
-              {filteredQuestions.map((q) => (
-                <QuestionCollationCard
-                  key={q.questionId}
-                  question={q}
-                  isExpanded={!!expandedQuestions[q.questionId]}
-                  onToggle={() => toggleQuestion(q.questionId)}
-                  employeeName={employee.name}
-                  isAnonymized={isAnonymized}
-                  onToggleApproval={handleToggleResponseApproval}
-                  onSaveEdit={handleSaveResponseEdit}
-                />
-              ))}
+              {filteredQuestions.length > 0 ? (
+                filteredQuestions.map((q) => (
+                  <QuestionCollationCard
+                    key={q.questionId}
+                    question={q}
+                    isExpanded={!!expandedQuestions[q.questionId]}
+                    onToggle={() => toggleQuestion(q.questionId)}
+                    employeeName={employee.name}
+                    isAnonymized={isAnonymized}
+                    onToggleApproval={handleToggleResponseApproval}
+                    onSaveEdit={handleSaveResponseEdit}
+                  />
+                ))
+              ) : (
+                <Card className="text-center py-10 border-dashed">
+                  <CardContent>
+                    <Layers className="mx-auto h-8 w-8 text-muted-foreground mb-2" />
+                    <h3 className="text-xs font-semibold text-foreground">
+                      {profileData.collatedQuestions.length === 0 ? "No peer review responses submitted yet" : "No matching questions"}
+                    </h3>
+                    <p className="text-[11px] text-muted-foreground mt-1">
+                      {profileData.collatedQuestions.length === 0
+                        ? "When peer reviewers submit evaluations for this cycle, their responses will appear here collated by question."
+                        : "Try adjusting your filter query."}
+                    </p>
+                  </CardContent>
+                </Card>
+              )}
             </div>
           </div>
 
@@ -994,134 +1022,174 @@ export default function TeamMemberProfilePage() {
 
           {/* TAB 3: Individual Peer Reviews */}
           <TabsContent value="individual-reviews" className="space-y-4 mt-4">
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {allReviewers.map((rev, revIdx) => {
-                const displayName = isAnonymized ? `Peer Reviewer #${revIdx + 1}` : rev.name;
-                const displayRole = isAnonymized ? 'Anonymous Peer Reviewer' : (rev.role || 'Peer Reviewer');
+            {allReviewers.length > 0 ? (
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {allReviewers.map((rev, revIdx) => {
+                  const displayName = isAnonymized ? `Peer Reviewer #${revIdx + 1}` : rev.name;
+                  const displayRole = isAnonymized ? 'Anonymous Peer Reviewer' : (rev.role || 'Peer Reviewer');
 
-                // Find all responses submitted by this reviewer
-                const reviewerAnswers = profileData.collatedQuestions
-                  .map((q) => {
-                    const ans = q.peerAnswers.find((p) => p.reviewerName === rev.name);
-                    return ans ? { question: q.questionText, answer: ans.answerText } : null;
-                  })
-                  .filter(Boolean) as Array<{ question: string; answer: string }>;
+                  // Find all responses submitted by this reviewer
+                  const reviewerAnswers = profileData.collatedQuestions
+                    .map((q) => {
+                      const ans = q.peerAnswers.find((p) => p.reviewerName === rev.name);
+                      return ans ? { question: q.questionText, answer: ans.answerText } : null;
+                    })
+                    .filter(Boolean) as Array<{ question: string; answer: string }>;
 
-                return (
-                  <Card key={rev.name} className="border border-border bg-card shadow-sm flex flex-col justify-between">
-                    <CardHeader className="pb-3 border-b border-border/40">
-                      <div className="flex items-center gap-3">
-                        <Avatar className="h-9 w-9 ring-1 ring-border">
-                          {!isAnonymized && <AvatarImage src={rev.avatarUrl} alt={rev.name} />}
-                          <AvatarFallback className="text-xs font-semibold bg-muted text-muted-foreground">
-                            {isAnonymized ? <Lock className="h-3.5 w-3.5" /> : rev.name.split(' ').map((n) => n[0]).join('')}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <CardTitle className="text-sm font-semibold font-headline flex items-center gap-1.5">
-                            {displayName}
-                            {isAnonymized && (
-                              <Badge variant="outline" className="text-[9px] py-0 px-1 font-normal text-muted-foreground">
-                                Anonymous
-                              </Badge>
-                            )}
-                          </CardTitle>
-                          <p className="text-[11px] text-muted-foreground">{displayRole}</p>
-                        </div>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="p-4 space-y-3 flex-1">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-muted-foreground">Responses Provided</span>
-                        <Badge variant="secondary" className="text-[11px]">
-                          {reviewerAnswers.length} Answers
-                        </Badge>
-                      </div>
-                      <div className="space-y-2 pt-1">
-                        {reviewerAnswers.slice(0, 2).map((ans, i) => (
-                          <div key={i} className="text-xs p-2 rounded bg-muted/40 border border-border/40">
-                            <p className="font-medium text-foreground text-[11px] line-clamp-1">{ans.question}</p>
-                            <p className="text-muted-foreground mt-1 line-clamp-2 italic text-[11px]">
-                              &ldquo;{ans.answer}&rdquo;
-                            </p>
+                  return (
+                    <Card key={rev.name} className="border border-border bg-card shadow-sm flex flex-col justify-between">
+                      <CardHeader className="pb-3 border-b border-border/40">
+                        <div className="flex items-center gap-3">
+                          <Avatar className="h-9 w-9 ring-1 ring-border">
+                            {!isAnonymized && <AvatarImage src={rev.avatarUrl} alt={rev.name} />}
+                            <AvatarFallback className="text-xs font-semibold bg-muted text-muted-foreground">
+                              {isAnonymized ? <Lock className="h-3.5 w-3.5" /> : rev.name.split(' ').map((n) => n[0]).join('')}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <CardTitle className="text-sm font-semibold font-headline flex items-center gap-1.5">
+                              {displayName}
+                              {isAnonymized && (
+                                <Badge variant="outline" className="text-[9px] py-0 px-1 font-normal text-muted-foreground">
+                                  Anonymous
+                                </Badge>
+                              )}
+                            </CardTitle>
+                            <p className="text-[11px] text-muted-foreground">{displayRole}</p>
                           </div>
-                        ))}
-                      </div>
-                    </CardContent>
-                    <CardFooter className="pt-2 border-t border-border/40">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="w-full text-xs h-7 text-primary hover:text-primary"
-                        onClick={() => {
-                          setQuestionSearch(rev.name);
-                          setActiveTab('collated-questions');
-                        }}
-                      >
-                        View in Collated Questions →
-                      </Button>
-                    </CardFooter>
-                  </Card>
-                );
-              })}
-            </div>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="p-4 space-y-3 flex-1">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-muted-foreground">Responses Provided</span>
+                          <Badge variant="secondary" className="text-[11px]">
+                            {reviewerAnswers.length} Answers
+                          </Badge>
+                        </div>
+                        <div className="space-y-2 pt-1">
+                          {reviewerAnswers.slice(0, 2).map((ans, i) => (
+                            <div key={i} className="text-xs p-2 rounded bg-muted/40 border border-border/40">
+                              <p className="font-medium text-foreground text-[11px] line-clamp-1">{ans.question}</p>
+                              <p className="text-muted-foreground mt-1 line-clamp-2 italic text-[11px]">
+                                &ldquo;{ans.answer}&rdquo;
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      </CardContent>
+                      <CardFooter className="pt-2 border-t border-border/40">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="w-full text-xs h-7 text-primary hover:text-primary"
+                          onClick={() => {
+                            setQuestionSearch(rev.name);
+                            setActiveTab('collated-questions');
+                          }}
+                        >
+                          View in Collated Questions →
+                        </Button>
+                      </CardFooter>
+                    </Card>
+                  );
+                })}
+              </div>
+            ) : (
+              <Card className="text-center py-12 border-dashed">
+                <CardContent>
+                  <Users className="mx-auto h-8 w-8 text-muted-foreground mb-2" />
+                  <h3 className="text-sm font-semibold text-foreground">No peer reviews submitted yet</h3>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Once team members submit their peer assessments for this cycle, they will be listed here.
+                  </p>
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
 
           {/* TAB 4: AI Insights */}
           <TabsContent value="ai-insights" className="space-y-4 mt-4">
-            <Card className="border border-border bg-card shadow-sm">
-              <CardHeader className="pb-3 border-b border-border/50">
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <CardTitle className="text-base font-semibold font-headline flex items-center gap-1.5">
-                      <Sparkles className="h-4 w-4 text-primary" /> Aggregated AI Feedback Insights
-                    </CardTitle>
-                    <CardDescription className="text-xs">
-                      Machine-learning synthesis of common themes, sentiment analysis, and key opportunities.
-                    </CardDescription>
+            {profileData.aiInsights && (profileData.aiInsights.summary || (profileData.aiInsights.strengths && profileData.aiInsights.strengths.length > 0) || (profileData.aiInsights.growthAreas && profileData.aiInsights.growthAreas.length > 0)) ? (
+              <Card className="border border-border bg-card shadow-sm">
+                <CardHeader className="pb-3 border-b border-border/50">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <CardTitle className="text-base font-semibold font-headline flex items-center gap-1.5">
+                        <Sparkles className="h-4 w-4 text-primary" /> Aggregated AI Feedback Insights
+                      </CardTitle>
+                      <CardDescription className="text-xs">
+                        Machine-learning synthesis of common themes, sentiment analysis, and key opportunities.
+                      </CardDescription>
+                    </div>
+                    {profileData.aiInsights.sentiment && (
+                      <Badge
+                        variant="outline"
+                        className={`text-xs font-semibold ${
+                          profileData.aiInsights.sentiment === 'positive'
+                            ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                            : profileData.aiInsights.sentiment === 'negative'
+                            ? 'border-rose-200 bg-rose-50 text-rose-700'
+                            : 'border-blue-200 bg-blue-50 text-blue-700'
+                        }`}
+                      >
+                        <ThumbsUp className="mr-1 h-3 w-3" />
+                        {profileData.aiInsights.sentiment === 'positive'
+                          ? 'Positive Consensus'
+                          : profileData.aiInsights.sentiment === 'negative'
+                          ? 'Needs Attention'
+                          : 'Balanced Consensus'}
+                      </Badge>
+                    )}
                   </div>
-                  <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700 text-xs font-semibold">
-                    <ThumbsUp className="mr-1 h-3 w-3" /> Positive Consensus
-                  </Badge>
-                </div>
-              </CardHeader>
-              <CardContent className="p-6 space-y-4">
-                <div className="p-4 rounded-lg bg-muted/40 border border-border/50 leading-relaxed text-xs text-foreground/90">
-                  <p className="font-semibold text-foreground text-sm mb-1.5">Executive Summary</p>
-                  <p>
-                    {employee.name} has demonstrated outstanding technical execution and leadership throughout the review cycle.
-                    All peer reviewers highlighted exceptional code reliability, rapid code review turnaround times, and
-                    willingness to pair program during complex production triage. The primary growth opportunity identified across both
-                    self-evaluation and peer feedback is increasing delegation of sub-tasks to mentor junior engineers and expanding
-                    executive-level communication.
+                </CardHeader>
+                <CardContent className="p-6 space-y-4">
+                  {profileData.aiInsights.summary && (
+                    <div className="p-4 rounded-lg bg-muted/40 border border-border/50 leading-relaxed text-xs text-foreground/90">
+                      <p className="font-semibold text-foreground text-sm mb-1.5">Executive Summary</p>
+                      <p>{profileData.aiInsights.summary}</p>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                    {profileData.aiInsights.strengths && profileData.aiInsights.strengths.length > 0 && (
+                      <div className="space-y-2 p-4 rounded-lg border border-border/60 bg-card">
+                        <span className="text-xs font-semibold text-foreground uppercase tracking-wider flex items-center gap-1.5">
+                          <Award className="h-3.5 w-3.5 text-emerald-600" /> Core Strengths Identified
+                        </span>
+                        <ul className="text-xs text-muted-foreground space-y-1.5 list-disc pl-4 pt-1">
+                          {profileData.aiInsights.strengths.map((s, idx) => (
+                            <li key={idx}>{s}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {profileData.aiInsights.growthAreas && profileData.aiInsights.growthAreas.length > 0 && (
+                      <div className="space-y-2 p-4 rounded-lg border border-border/60 bg-card">
+                        <span className="text-xs font-semibold text-foreground uppercase tracking-wider flex items-center gap-1.5">
+                          <TrendingUp className="h-3.5 w-3.5 text-blue-600" /> Recommended Growth Areas
+                        </span>
+                        <ul className="text-xs text-muted-foreground space-y-1.5 list-disc pl-4 pt-1">
+                          {profileData.aiInsights.growthAreas.map((g, idx) => (
+                            <li key={idx}>{g}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card className="text-center py-12 border-dashed">
+                <CardContent>
+                  <Sparkles className="mx-auto h-8 w-8 text-muted-foreground mb-2" />
+                  <h3 className="text-sm font-semibold text-foreground">No AI Insights generated yet</h3>
+                  <p className="text-xs text-muted-foreground mt-1 max-w-md mx-auto">
+                    AI synthesis will be automatically generated once sufficient peer evaluations and self-assessments are submitted for this review cycle.
                   </p>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-                  <div className="space-y-2 p-4 rounded-lg border border-border/60 bg-card">
-                    <span className="text-xs font-semibold text-foreground uppercase tracking-wider flex items-center gap-1.5">
-                      <Award className="h-3.5 w-3.5 text-emerald-600" /> Core Strengths Identified
-                    </span>
-                    <ul className="text-xs text-muted-foreground space-y-1.5 list-disc pl-4 pt-1">
-                      <li>Auth middleware refactoring and high-availability systems design</li>
-                      <li>Prompt, constructive PR reviews and proactive incident debugging</li>
-                      <li>Collaborative, patient mentorship during engineering pairing sessions</li>
-                    </ul>
-                  </div>
-
-                  <div className="space-y-2 p-4 rounded-lg border border-border/60 bg-card">
-                    <span className="text-xs font-semibold text-foreground uppercase tracking-wider flex items-center gap-1.5">
-                      <TrendingUp className="h-3.5 w-3.5 text-blue-600" /> Recommended Growth Areas
-                    </span>
-                    <ul className="text-xs text-muted-foreground space-y-1.5 list-disc pl-4 pt-1">
-                      <li>Scoping multi-quarter initiatives with non-technical business stakeholders</li>
-                      <li>Delegating architectural sub-tasks to foster junior team ownership</li>
-                      <li>Presenting system designs at engineering all-hands and cross-team forums</li>
-                    </ul>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
         </Tabs>
       )}

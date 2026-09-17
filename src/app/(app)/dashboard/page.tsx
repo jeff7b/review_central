@@ -186,7 +186,7 @@ export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
 
   // Live Mentor Feedback state for the employee
-  const [activeEmployeeId, setActiveEmployeeId] = useState('tm1');
+  const [activeEmployeeId, setActiveEmployeeId] = useState<string>('');
   const {
     feedback: liveMentorFeedback,
     saveFeedback: saveMentorFeedbackFromEmployee,
@@ -723,7 +723,9 @@ export default function DashboardPage() {
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                         <div className="flex items-center gap-3">
                           <Avatar className="h-10 w-10 ring-2 ring-primary/30">
-                            <AvatarImage src="https://placehold.co/100x100.png?text=DP" alt={liveMentorFeedback.mentorName} />
+                            {liveMentorFeedback.mentorAvatarUrl ? (
+                              <AvatarImage src={liveMentorFeedback.mentorAvatarUrl} alt={liveMentorFeedback.mentorName} />
+                            ) : null}
                             <AvatarFallback className="text-xs font-bold">
                               {liveMentorFeedback.mentorName.split(' ').map((n) => n[0]).join('')}
                             </AvatarFallback>
@@ -738,7 +740,7 @@ export default function DashboardPage() {
                               </Badge>
                             </div>
                             <p className="text-xs text-muted-foreground">
-                              {liveMentorFeedback.cycleName || 'FY2024 H2 Performance Review'}
+                              {liveMentorFeedback.cycleName || selectedCycle?.name || 'Active Review Cycle'}
                             </p>
                           </div>
                         </div>

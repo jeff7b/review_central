@@ -179,6 +179,7 @@ export function useLiveMentorFeedback({
         mentorId: current?.mentorId || 'mentor-1',
         mentorName: current?.mentorName || 'Team Leader',
         mentorRole: current?.mentorRole || 'Team Leader / Mentor',
+        mentorAvatarUrl: partial.mentorAvatarUrl !== undefined ? partial.mentorAvatarUrl : current?.mentorAvatarUrl,
         cycleId: current?.cycleId || 'current-cycle',
         cycleName: current?.cycleName || 'Current Review Cycle',
         sharedNotes: partial.sharedNotes !== undefined ? partial.sharedNotes : (current?.sharedNotes || ''),
@@ -186,6 +187,9 @@ export function useLiveMentorFeedback({
         growthAreas: partial.growthAreas || current?.growthAreas || [],
         actionItems: partial.actionItems || current?.actionItems || [],
         isShared: partial.isShared !== undefined ? partial.isShared : (current?.isShared ?? true),
+        isPeerFeedbackShared: partial.isPeerFeedbackShared !== undefined ? partial.isPeerFeedbackShared : (current?.isPeerFeedbackShared ?? false),
+        approvedResponseIds: partial.approvedResponseIds !== undefined ? partial.approvedResponseIds : (current?.approvedResponseIds ?? []),
+        editedResponses: partial.editedResponses !== undefined ? partial.editedResponses : (current?.editedResponses ?? {}),
         lastUpdated: now,
         status: partial.status || current?.status || 'in_meeting',
       };

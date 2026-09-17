@@ -13,6 +13,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
   ArrowLeft,
   CheckCircle2,
   Clock,
@@ -675,12 +682,43 @@ export default function TeamMemberProfilePage() {
       {/* Top Back Navigation & Action Bar */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <Button variant="ghost" size="sm" className="h-8 text-xs font-medium text-muted-foreground hover:text-foreground pl-0" asChild>
-          <Link href={cycleId ? `/team-dashboard?cycleId=${cycleId}` : "/team-dashboard"}>
+          <Link href={profileData?.reviewCycle?.id || cycleId ? `/team-dashboard?cycleId=${profileData?.reviewCycle?.id || cycleId}` : "/team-dashboard"}>
             <ArrowLeft className="mr-1.5 h-3.5 w-3.5" /> Back to Team Dashboard
           </Link>
         </Button>
 
-        <div className="flex items-center gap-2 self-end sm:self-auto">
+        <div className="flex flex-wrap items-center gap-2 self-end sm:self-auto">
+          {/* Review Cycle Selector Dropdown */}
+          {profileData?.reviewCycles && profileData.reviewCycles.length > 0 && (
+            <div className="flex items-center gap-1.5">
+              <Calendar className="h-3.5 w-3.5 text-muted-foreground hidden sm:inline-block" />
+              <Select
+                value={profileData.reviewCycle?.id || cycleId || profileData.reviewCycles[0]?.id}
+                onValueChange={(newCycleId) => {
+                  router.push(`/team-dashboard/member/${memberId}?cycleId=${newCycleId}`);
+                }}
+              >
+                <SelectTrigger className="h-8 text-xs font-medium w-[180px] sm:w-[220px]">
+                  <SelectValue placeholder="Select Review Cycle" />
+                </SelectTrigger>
+                <SelectContent>
+                  {profileData.reviewCycles.map((c) => (
+                    <SelectItem key={c.id} value={c.id} className="text-xs">
+                      <div className="flex items-center justify-between gap-2 w-full">
+                        <span>{c.name}</span>
+                        {c.status === 'active' && (
+                          <span className="text-[10px] px-1.5 py-0.2 rounded font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                            active
+                          </span>
+                        )}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
           <Button
             variant={isAnonymized ? 'secondary' : 'outline'}
             size="sm"
@@ -753,7 +791,7 @@ export default function TeamMemberProfilePage() {
                   </span>
                   <span>•</span>
                   <span>
-                    Cycle: <strong className="text-foreground font-medium">{profileData.reviewCycle?.name || liveFeedback?.cycleName || 'Active Review Cycle'}</strong>
+                    Cycle: <strong className="text-foreground font-medium">{profileData.reviewCycle?.name || (cycleId && profileData.reviewCycles?.find(c => c.id === cycleId)?.name) || 'Active Review Cycle'}</strong>
                   </span>
                 </div>
               </div>

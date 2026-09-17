@@ -751,7 +751,7 @@ export default function DashboardPage() {
                               </Badge>
                             </div>
                             <p className="text-xs text-muted-foreground">
-                              {liveMentorFeedback.cycleName || selectedCycle?.name || 'Active Review Cycle'}
+                              {selectedCycle?.name || liveMentorFeedback.cycleName || 'Active Review Cycle'}
                             </p>
                           </div>
                         </div>
@@ -875,7 +875,7 @@ export default function DashboardPage() {
                         <span>Shared live notes area during your 1:1 meeting. Updates stream live without refreshing.</span>
                       </div>
                       <Button variant="ghost" size="sm" asChild className="h-7 text-xs text-primary">
-                        <Link href={`/team-dashboard/member/${activeEmployeeId}`} target="_blank">
+                        <Link href={`/team-dashboard/member/${activeEmployeeId}${selectedCycleId ? `?cycleId=${selectedCycleId}` : ''}`} target="_blank">
                           <ExternalLink className="mr-1 h-3 w-3" /> View Member Profile
                         </Link>
                       </Button>

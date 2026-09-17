@@ -36,35 +36,46 @@ const inMemoryMentorFeedback = new Map<string, MentorFeedback>();
 export async function getMemberFeedbackProfile(employeeId: string, cycleId?: string) {
   // 1. Resolve Review Cycle from Firestore
   let resolvedCycle: { id: string; name: string; status: string; peerReviewQuestionnaireId?: string | null } | undefined = undefined;
+  let allReviewCycles: { id: string; name: string; status: string; startDate?: string; endDate?: string; peerReviewQuestionnaireId?: string | null }[] = [];
 
   try {
-    if (cycleId) {
+    const cyclesSnap = await adminDb.collection('review-cycles').get().catch(() => null);
+    if (cyclesSnap && !cyclesSnap.empty) {
+      allReviewCycles = cyclesSnap.docs.map(d => {
+        const cData = d.data();
+        return {
+          id: d.id,
+          name: cData.name || 'Untitled Cycle',
+          status: cData.status || 'draft',
+          startDate: toISOString(cData.startDate),
+          endDate: toISOString(cData.endDate),
+          peerReviewQuestionnaireId: cData.peerReviewQuestionnaireId || null,
+        };
+      });
+      allReviewCycles.sort((a, b) => new Date(b.startDate || 0).getTime() - new Date(a.startDate || 0).getTime());
+
+      if (cycleId) {
+        resolvedCycle = allReviewCycles.find(c => c.id === cycleId);
+      }
+      if (!resolvedCycle) {
+        resolvedCycle = allReviewCycles.find(c => c.status === 'active') || allReviewCycles[0];
+      }
+    } else if (cycleId) {
       const cycleDoc = await adminDb.collection('review-cycles').doc(cycleId).get().catch(() => null);
       if (cycleDoc && cycleDoc.exists) {
         const cData = cycleDoc.data()!;
         resolvedCycle = {
           id: cycleDoc.id,
-          name: cData.name || 'Performance Review Cycle',
+          name: cData.name || 'Active Review Cycle',
           status: cData.status || 'active',
           peerReviewQuestionnaireId: cData.peerReviewQuestionnaireId || null,
         };
-      }
-    }
-
-    if (!resolvedCycle) {
-      // Find active cycle, or fall back to most recent cycle
-      const cyclesSnap = await adminDb.collection('review-cycles').get().catch(() => null);
-      if (cyclesSnap && !cyclesSnap.empty) {
-        const cycles = cyclesSnap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
-        const activeCycle = cycles.find(c => c.status === 'active') || cycles[0];
-        if (activeCycle) {
-          resolvedCycle = {
-            id: activeCycle.id,
-            name: activeCycle.name || 'Active Review Cycle',
-            status: activeCycle.status || 'active',
-            peerReviewQuestionnaireId: activeCycle.peerReviewQuestionnaireId || null,
-          };
-        }
+        allReviewCycles = [{
+          id: cycleDoc.id,
+          name: resolvedCycle.name,
+          status: resolvedCycle.status,
+          peerReviewQuestionnaireId: resolvedCycle.peerReviewQuestionnaireId,
+        }];
       }
     }
   } catch (err) {
@@ -72,7 +83,7 @@ export async function getMemberFeedbackProfile(employeeId: string, cycleId?: str
   }
 
   const effectiveCycleId = resolvedCycle?.id || cycleId;
-  const effectiveCycleName = resolvedCycle?.name || 'Performance Review Cycle';
+  const effectiveCycleName = resolvedCycle?.name || (resolvedCycle ? 'Active Review Cycle' : undefined);
 
   // 2. Fetch user profile and mentor information from Firestore
   let employeeName = `Team Member (${employeeId})`;
@@ -305,7 +316,11 @@ export async function getMemberFeedbackProfile(employeeId: string, cycleId?: str
   }
 
   // 8. Initial / fallback MentorFeedback object
-  const defaultFeedback: MentorFeedback = liveFeedback || {
+  const defaultFeedback: MentorFeedback = liveFeedback ? {
+    ...liveFeedback,
+    cycleId: effectiveCycleId || liveFeedback.cycleId,
+    cycleName: effectiveCycleName || liveFeedback.cycleName || 'Active Review Cycle',
+  } : {
     id: `mf-${employeeId}`,
     employeeId,
     employeeName,
@@ -314,7 +329,7 @@ export async function getMemberFeedbackProfile(employeeId: string, cycleId?: str
     mentorRole,
     mentorAvatarUrl,
     cycleId: effectiveCycleId,
-    cycleName: effectiveCycleName,
+    cycleName: effectiveCycleName || 'Active Review Cycle',
     sharedNotes: '',
     strengths: [],
     growthAreas: [],
@@ -343,6 +358,13 @@ export async function getMemberFeedbackProfile(employeeId: string, cycleId?: str
       name: resolvedCycle.name,
       status: resolvedCycle.status,
     } : undefined,
+    reviewCycles: allReviewCycles.map(c => ({
+      id: c.id,
+      name: c.name,
+      status: c.status,
+      startDate: c.startDate,
+      endDate: c.endDate,
+    })),
     collatedQuestions: realCollatedQuestions,
     mentorFeedback: defaultFeedback,
     aiInsights,
@@ -380,6 +402,20 @@ export async function saveMentorFeedback(feedback: Partial<MentorFeedback> & { e
   const existing = await getMentorFeedback(feedback.employeeId);
   const now = new Date().toISOString();
 
+  let resolvedCycleName = feedback.cycleName;
+  const targetCycleId = feedback.cycleId || existing?.cycleId;
+
+  if (targetCycleId && (!resolvedCycleName || resolvedCycleName === 'Current Review Cycle' || resolvedCycleName.includes('FY2024'))) {
+    try {
+      const cycleDoc = await adminDb.collection('review-cycles').doc(targetCycleId).get().catch(() => null);
+      if (cycleDoc && cycleDoc.exists) {
+        resolvedCycleName = cycleDoc.data()?.name || resolvedCycleName;
+      }
+    } catch (err) {
+      // ignore
+    }
+  }
+
   const updated: MentorFeedback = {
     id: feedback.id || existing?.id || `mf-${feedback.employeeId}`,
     employeeId: feedback.employeeId,
@@ -388,8 +424,8 @@ export async function saveMentorFeedback(feedback: Partial<MentorFeedback> & { e
     mentorName: feedback.mentorName || existing?.mentorName || 'Team Lead',
     mentorRole: feedback.mentorRole || existing?.mentorRole || 'Team Leader / Mentor',
     mentorAvatarUrl: feedback.mentorAvatarUrl || existing?.mentorAvatarUrl,
-    cycleId: feedback.cycleId || existing?.cycleId || 'current-cycle',
-    cycleName: feedback.cycleName || existing?.cycleName || 'Current Review Cycle',
+    cycleId: targetCycleId || 'current-cycle',
+    cycleName: resolvedCycleName || existing?.cycleName || 'Active Review Cycle',
     sharedNotes: feedback.sharedNotes !== undefined ? feedback.sharedNotes : (existing?.sharedNotes || ''),
     strengths: feedback.strengths || existing?.strengths || [],
     growthAreas: feedback.growthAreas || existing?.growthAreas || [],

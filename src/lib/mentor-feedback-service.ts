@@ -27,6 +27,22 @@ function toISOString(val: unknown): string {
 // In-memory store fallback for development / offline environments
 const inMemoryMentorFeedback = new Map<string, MentorFeedback>();
 
+const defaultSelfQuestions: Question[] = [
+  { id: 'q1', text: 'What were your major accomplishments in the last review period?', order: 1 },
+  { id: 'q2', text: 'What are some areas where you faced challenges, and how did you address them?', order: 2 },
+  { id: 'q3', text: 'What are your key strengths, and how did you leverage them?', order: 3 },
+  { id: 'q4', text: 'What are your areas for development, and what steps will you take to improve?', order: 4 },
+  { id: 'q5', text: 'What are your goals for the next review period?', order: 5 },
+];
+
+const defaultPeerQuestions: Question[] = [
+  { id: 'pq1', text: 'How has this peer contributed to team goals?', order: 1 },
+  { id: 'pq2', text: 'Describe a situation where this peer demonstrated strong collaboration skills.', order: 2 },
+  { id: 'pq3', text: "What are this peer's key strengths from your perspective?", order: 3 },
+  { id: 'pq4', text: 'In what areas could this peer potentially improve or develop further?', order: 4 },
+  { id: 'pq5', text: 'Provide any additional feedback you think would be helpful.', order: 5 },
+];
+
 /**
  * Retrieves the member profile and collated feedback grouped by question.
  * Dynamically queries Firestore review-cycles, users, peer-reviews,
@@ -35,8 +51,22 @@ const inMemoryMentorFeedback = new Map<string, MentorFeedback>();
  */
 export async function getMemberFeedbackProfile(employeeId: string, cycleId?: string) {
   // 1. Resolve Review Cycle from Firestore
-  let resolvedCycle: { id: string; name: string; status: string; peerReviewQuestionnaireId?: string | null } | undefined = undefined;
-  let allReviewCycles: { id: string; name: string; status: string; startDate?: string; endDate?: string; peerReviewQuestionnaireId?: string | null }[] = [];
+  let resolvedCycle: {
+    id: string;
+    name: string;
+    status: string;
+    peerReviewQuestionnaireId?: string | null;
+    selfReviewQuestionnaireId?: string | null;
+  } | undefined = undefined;
+  let allReviewCycles: {
+    id: string;
+    name: string;
+    status: string;
+    startDate?: string;
+    endDate?: string;
+    peerReviewQuestionnaireId?: string | null;
+    selfReviewQuestionnaireId?: string | null;
+  }[] = [];
 
   try {
     const cyclesSnap = await adminDb.collection('review-cycles').get().catch(() => null);
@@ -50,6 +80,7 @@ export async function getMemberFeedbackProfile(employeeId: string, cycleId?: str
           startDate: toISOString(cData.startDate),
           endDate: toISOString(cData.endDate),
           peerReviewQuestionnaireId: cData.peerReviewQuestionnaireId || null,
+          selfReviewQuestionnaireId: cData.selfReviewQuestionnaireId || null,
         };
       });
       allReviewCycles.sort((a, b) => new Date(b.startDate || 0).getTime() - new Date(a.startDate || 0).getTime());
@@ -69,12 +100,14 @@ export async function getMemberFeedbackProfile(employeeId: string, cycleId?: str
           name: cData.name || 'Active Review Cycle',
           status: cData.status || 'active',
           peerReviewQuestionnaireId: cData.peerReviewQuestionnaireId || null,
+          selfReviewQuestionnaireId: cData.selfReviewQuestionnaireId || null,
         };
         allReviewCycles = [{
           id: cycleDoc.id,
           name: resolvedCycle.name,
           status: resolvedCycle.status,
           peerReviewQuestionnaireId: resolvedCycle.peerReviewQuestionnaireId,
+          selfReviewQuestionnaireId: resolvedCycle.selfReviewQuestionnaireId,
         }];
       }
     }
@@ -126,41 +159,180 @@ export async function getMemberFeedbackProfile(employeeId: string, cycleId?: str
 
   // 4. Fetch self review from Firestore and determine selfReviewStatus
   let selfReviewStatus: 'not_started' | 'draft' | 'submitted' = 'not_started';
-  let selfAnswersMap: Record<string, { answerText: string; submittedAt?: string }> = {};
+
+  interface SelfAnswerEntry {
+    answerText: string;
+    submittedAt?: string;
+    order: number;
+    questionId?: string;
+    questionText?: string;
+  }
+  const selfAnswersByQuestionId = new Map<string, SelfAnswerEntry>();
+  const selfAnswersByOrder = new Map<number, SelfAnswerEntry>();
+  const selfAnswersByIndex = new Map<number, SelfAnswerEntry>();
+  let selfQuestions: Question[] = [];
 
   try {
-    let selfReviewQuery = adminDb.collection('reviews')
+    const selfReviewsSnap = await adminDb.collection('reviews')
       .where('type', '==', 'self')
-      .where('revieweeId', '==', employeeId);
+      .get()
+      .catch(() => null);
 
-    if (effectiveCycleId) {
-      selfReviewQuery = selfReviewQuery.where('reviewCycleId', '==', effectiveCycleId);
+    let matchingSelfDoc: Review | null = null;
+
+    if (selfReviewsSnap && !selfReviewsSnap.empty) {
+      const candidates = selfReviewsSnap.docs
+        .map((d) => ({ id: d.id, ...d.data() }) as Review & { userId?: string })
+        .filter(
+          (d) =>
+            d.revieweeId === employeeId ||
+            d.userId === employeeId ||
+            (d.reviewee as any)?.id === employeeId
+        );
+
+      if (candidates.length > 0) {
+        if (effectiveCycleId) {
+          matchingSelfDoc =
+            candidates.find(
+              (d) =>
+                d.reviewCycleId === effectiveCycleId ||
+                (d.title && resolvedCycle?.name && d.title.includes(resolvedCycle.name))
+            ) || null;
+        }
+
+        if (!matchingSelfDoc) {
+          candidates.sort((a, b) => {
+            const timeA = new Date(toISOString(a.updatedAt || a.createdAt)).getTime();
+            const timeB = new Date(toISOString(b.updatedAt || b.createdAt)).getTime();
+            return timeB - timeA;
+          });
+          matchingSelfDoc = candidates[0];
+        }
+      }
     }
 
-    const selfSnap = await selfReviewQuery.limit(1).get().catch(() => null);
-
-    if (selfSnap && !selfSnap.empty) {
-      const sDoc = selfSnap.docs[0].data() as Review;
-      const sAnswers = sDoc.answers || [];
-      const sSubmittedAt = toISOString(sDoc.updatedAt || sDoc.createdAt);
-
-      if (sDoc.status === 'submitted' || sDoc.status === 'completed') {
+    if (matchingSelfDoc) {
+      if (matchingSelfDoc.status === 'submitted' || matchingSelfDoc.status === 'completed') {
         selfReviewStatus = 'submitted';
-      } else if (sDoc.status === 'draft') {
+      } else if (matchingSelfDoc.status === 'draft') {
         selfReviewStatus = 'draft';
       }
 
-      sAnswers.forEach((a: any) => {
+      const sSubmittedAt = toISOString(matchingSelfDoc.updatedAt || matchingSelfDoc.createdAt);
+
+      if (Array.isArray(matchingSelfDoc.questions) && matchingSelfDoc.questions.length > 0) {
+        selfQuestions = matchingSelfDoc.questions;
+      } else if (matchingSelfDoc.questionnaireId) {
+        const qDoc = await adminDb.collection('questionnaires').doc(matchingSelfDoc.questionnaireId).get().catch(() => null);
+        if (qDoc && qDoc.exists) {
+          selfQuestions = qDoc.data()?.questions || [];
+        }
+      }
+
+      if (selfQuestions.length === 0 && resolvedCycle?.selfReviewQuestionnaireId) {
+        const qDoc = await adminDb.collection('questionnaires').doc(resolvedCycle.selfReviewQuestionnaireId).get().catch(() => null);
+        if (qDoc && qDoc.exists) {
+          selfQuestions = qDoc.data()?.questions || [];
+        }
+      }
+
+      if (selfQuestions.length === 0) {
+        const activeSelfSnap = await adminDb.collection('questionnaires')
+          .where('type', '==', 'self')
+          .where('isActive', '==', true)
+          .limit(1)
+          .get()
+          .catch(() => null);
+        if (activeSelfSnap && !activeSelfSnap.empty) {
+          selfQuestions = activeSelfSnap.docs[0].data()?.questions || [];
+        }
+      }
+
+      if (selfQuestions.length === 0) {
+        selfQuestions = defaultSelfQuestions;
+      }
+
+      selfQuestions.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
+      const sAnswers = matchingSelfDoc.answers || [];
+      sAnswers.forEach((a: any, idx: number) => {
+        const answerText = a.answerText || '';
+        if (!answerText) return;
+
+        let matchedQ = selfQuestions.find((q) => q.id === a.questionId);
+        let order = matchedQ?.order ?? (idx + 1);
+
+        if (!matchedQ && a.questionId) {
+          const numMatch = a.questionId.match(/\d+/);
+          if (numMatch) {
+            const parsedNum = parseInt(numMatch[0], 10);
+            if (!isNaN(parsedNum)) {
+              order = parsedNum;
+              matchedQ = selfQuestions.find((q) => (q.order ?? 0) === parsedNum) || selfQuestions[parsedNum - 1];
+            }
+          }
+        }
+
+        const entry: SelfAnswerEntry = {
+          answerText,
+          submittedAt: sSubmittedAt,
+          order,
+          questionId: a.questionId,
+          questionText: matchedQ?.text,
+        };
+
         if (a.questionId) {
-          selfAnswersMap[a.questionId] = {
-            answerText: a.answerText || '',
-            submittedAt: sSubmittedAt,
-          };
+          selfAnswersByQuestionId.set(a.questionId, entry);
+        }
+        selfAnswersByOrder.set(order, entry);
+        selfAnswersByIndex.set(idx + 1, entry);
+      });
+
+      selfQuestions.forEach((sq, sqIdx) => {
+        const orderNum = sq.order ?? (sqIdx + 1);
+        const ansByOrder = selfAnswersByOrder.get(orderNum);
+        if (ansByOrder && !ansByOrder.questionText) {
+          ansByOrder.questionText = sq.text;
         }
       });
     }
   } catch (err) {
     console.warn(`Error querying self-review for ${employeeId}:`, err);
+  }
+
+  // Helper function to resolve corresponding Self Review answer and question number
+  function getSelfReviewForQuestion(
+    peerQuestionId: string,
+    peerQuestionOrder: number,
+    peerIndex: number
+  ): {
+    answerText?: string;
+    submittedAt?: string;
+    selfQuestionNumber: number;
+    selfQuestionText?: string;
+  } {
+    // 1. Match by questionId (in case of shared question IDs)
+    let found = selfAnswersByQuestionId.get(peerQuestionId);
+
+    // 2. Match by question order number (Peer Q1 -> Self Q1, Peer Q2 -> Self Q2, etc.)
+    if (!found) {
+      found = selfAnswersByOrder.get(peerQuestionOrder);
+    }
+
+    // 3. Match by index in sequence (1st peer Q -> 1st self answer)
+    if (!found) {
+      found = selfAnswersByIndex.get(peerIndex + 1);
+    }
+
+    const selfQuestionNumber = found?.order ?? peerQuestionOrder;
+    const matchingSq = selfQuestions.find((sq) => sq.order === selfQuestionNumber) || selfQuestions[selfQuestionNumber - 1];
+
+    return {
+      answerText: found?.answerText,
+      submittedAt: found?.submittedAt,
+      selfQuestionNumber,
+      selfQuestionText: found?.questionText || matchingSq?.text,
+    };
   }
 
   // 5. Attempt to fetch completed peer reviews from Firestore
@@ -210,20 +382,30 @@ export async function getMemberFeedbackProfile(employeeId: string, cycleId?: str
           if (!qObj) {
             const templateQ = questionnaire?.questions?.find((q) => q.id === ans.questionId);
             const questionText = templateQ?.text || `Evaluation Question #${idx + 1}`;
-            const questionOrder = templateQ?.order ?? (questionMap.size + 1);
+            const questionOrder = templateQ?.order ?? (idx + 1);
 
-            const selfInfo = selfAnswersMap[ans.questionId];
+            const selfInfo = getSelfReviewForQuestion(ans.questionId, questionOrder, idx);
 
             qObj = {
               questionId: ans.questionId,
               questionText,
               order: questionOrder,
               category: (templateQ as any)?.category || undefined,
-              selfAnswer: selfInfo?.answerText,
-              selfAnswerSubmittedAt: selfInfo?.submittedAt,
+              selfAnswer: selfInfo.answerText,
+              selfAnswerSubmittedAt: selfInfo.submittedAt,
+              selfQuestionNumber: selfInfo.selfQuestionNumber,
+              selfQuestionText: selfInfo.selfQuestionText,
               peerAnswers: [],
             };
             questionMap.set(ans.questionId, qObj);
+          } else if (!qObj.selfAnswer) {
+            const selfInfo = getSelfReviewForQuestion(ans.questionId, qObj.order, idx);
+            if (selfInfo.answerText) {
+              qObj.selfAnswer = selfInfo.answerText;
+              qObj.selfAnswerSubmittedAt = selfInfo.submittedAt;
+              qObj.selfQuestionNumber = selfInfo.selfQuestionNumber;
+              qObj.selfQuestionText = selfInfo.selfQuestionText;
+            }
           }
 
           const responseId = `resp-${aDoc.id}-${ans.questionId}`;
@@ -253,34 +435,78 @@ export async function getMemberFeedbackProfile(employeeId: string, cycleId?: str
       });
     }
 
-    // 6. If no peer reviews are completed yet, check if a template questionnaire is assigned to the cycle
-    if (realCollatedQuestions.length === 0 && resolvedCycle?.peerReviewQuestionnaireId) {
-      const qId = resolvedCycle.peerReviewQuestionnaireId;
-      let questionnaire = questionnaireCache.get(qId);
-      if (!questionnaire) {
-        const qDoc = await adminDb.collection('questionnaires').doc(qId).get().catch(() => null);
-        if (qDoc && qDoc.exists) {
-          questionnaire = { id: qDoc.id, ...qDoc.data() } as Questionnaire;
-          questionnaireCache.set(qId, questionnaire);
+    // 6. If no peer reviews are completed yet, initialize questions from questionnaire or defaults so self review is visible
+    if (realCollatedQuestions.length === 0) {
+      let peerQuestions: Question[] = [];
+      const qId = resolvedCycle?.peerReviewQuestionnaireId;
+      if (qId) {
+        let questionnaire = questionnaireCache.get(qId);
+        if (!questionnaire) {
+          const qDoc = await adminDb.collection('questionnaires').doc(qId).get().catch(() => null);
+          if (qDoc && qDoc.exists) {
+            questionnaire = { id: qDoc.id, ...qDoc.data() } as Questionnaire;
+            questionnaireCache.set(qId, questionnaire);
+          }
+        }
+        if (questionnaire?.questions && questionnaire.questions.length > 0) {
+          peerQuestions = questionnaire.questions;
         }
       }
 
-      if (questionnaire?.questions && questionnaire.questions.length > 0) {
-        realCollatedQuestions = questionnaire.questions.map((q, idx) => {
-          const selfInfo = selfAnswersMap[q.id];
-          return {
-            questionId: q.id,
-            questionText: q.text,
-            order: q.order ?? (idx + 1),
-            category: (q as any).category || undefined,
-            selfAnswer: selfInfo?.answerText,
-            selfAnswerSubmittedAt: selfInfo?.submittedAt,
-            peerAnswers: [],
-            isApprovedForSharing: false,
-          };
-        }).sort((a, b) => a.order - b.order);
+      if (peerQuestions.length === 0) {
+        const activePeerSnap = await adminDb.collection('questionnaires')
+          .where('type', '==', 'peer')
+          .where('isActive', '==', true)
+          .limit(1)
+          .get()
+          .catch(() => null);
+        if (activePeerSnap && !activePeerSnap.empty) {
+          peerQuestions = activePeerSnap.docs[0].data()?.questions || [];
+        }
       }
+
+      if (peerQuestions.length === 0) {
+        peerQuestions = defaultPeerQuestions;
+      }
+
+      realCollatedQuestions = peerQuestions.map((q, idx) => {
+        const questionOrder = q.order ?? (idx + 1);
+        const selfInfo = getSelfReviewForQuestion(q.id, questionOrder, idx);
+        return {
+          questionId: q.id,
+          questionText: q.text,
+          order: questionOrder,
+          category: (q as any).category || undefined,
+          selfAnswer: selfInfo.answerText,
+          selfAnswerSubmittedAt: selfInfo.submittedAt,
+          selfQuestionNumber: selfInfo.selfQuestionNumber,
+          selfQuestionText: selfInfo.selfQuestionText,
+          peerAnswers: [],
+          isApprovedForSharing: false,
+        };
+      }).sort((a, b) => a.order - b.order);
     }
+
+    // Ensure all self-review answers are represented even if peer reviews had fewer questions
+    selfAnswersByOrder.forEach((entry, orderNum) => {
+      const alreadyIncluded = realCollatedQuestions.some(
+        (q) => q.selfQuestionNumber === orderNum || q.order === orderNum
+      );
+      if (!alreadyIncluded && entry.answerText) {
+        realCollatedQuestions.push({
+          questionId: entry.questionId || `self-q-${orderNum}`,
+          questionText: entry.questionText || `Question #${orderNum}`,
+          order: orderNum,
+          selfAnswer: entry.answerText,
+          selfAnswerSubmittedAt: entry.submittedAt,
+          selfQuestionNumber: orderNum,
+          selfQuestionText: entry.questionText,
+          peerAnswers: [],
+          isApprovedForSharing: false,
+        });
+      }
+    });
+    realCollatedQuestions.sort((a, b) => a.order - b.order);
   } catch (err) {
     console.error('Error dynamically collating peer reviews from Firestore:', err);
   }

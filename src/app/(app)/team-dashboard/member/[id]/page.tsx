@@ -1229,9 +1229,21 @@ export default function TeamMemberProfilePage() {
                   const reviewerAnswers = profileData.collatedQuestions
                     .map((q) => {
                       const ans = q.peerAnswers.find((p) => p.reviewerName === rev.name);
-                      return ans ? { question: q.questionText, answer: ans.answerText } : null;
+                      return ans
+                        ? {
+                            question: q.questionText,
+                            answer: ans.answerText,
+                            order: q.order,
+                            selfQuestionNumber: q.selfQuestionNumber ?? q.order,
+                          }
+                        : null;
                     })
-                    .filter(Boolean) as Array<{ question: string; answer: string }>;
+                    .filter(Boolean) as Array<{
+                    question: string;
+                    answer: string;
+                    order: number;
+                    selfQuestionNumber: number;
+                  }>;
 
                   return (
                     <Card key={rev.name} className="border border-border bg-card shadow-sm flex flex-col justify-between">
@@ -1266,7 +1278,9 @@ export default function TeamMemberProfilePage() {
                         <div className="space-y-2 pt-1">
                           {reviewerAnswers.slice(0, 2).map((ans, i) => (
                             <div key={i} className="text-xs p-2 rounded bg-muted/40 border border-border/40">
-                              <p className="font-medium text-foreground text-[11px] line-clamp-1">{ans.question}</p>
+                              <p className="font-medium text-foreground text-[11px] line-clamp-1">
+                                Q{ans.order} (Self Review Q{ans.selfQuestionNumber}): {ans.question}
+                              </p>
                               <p className="text-muted-foreground mt-1 line-clamp-2 italic text-[11px]">
                                 &ldquo;{ans.answer}&rdquo;
                               </p>
@@ -1476,11 +1490,19 @@ function QuestionCollationCard({
                     <Lock className="h-2.5 w-2.5" /> Anonymous
                   </Badge>
                 )}
-                {question.selfAnswer && (
-                  <Badge variant="outline" className="text-[10px] border-emerald-200 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 font-medium">
-                    Self Assessment Included
-                  </Badge>
-                )}
+                {/* Corresponding Self Review Question Badge */}
+                <Badge
+                  variant="outline"
+                  className={`text-[10px] font-medium flex items-center gap-1 ${
+                    question.selfAnswer
+                      ? 'border-emerald-300 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300'
+                      : 'border-border text-muted-foreground'
+                  }`}
+                >
+                  <FileText className="h-2.5 w-2.5" />
+                  Self Review Q{question.selfQuestionNumber ?? question.order}
+                  {question.selfAnswer ? ' • Included' : ' • Not Recorded'}
+                </Badge>
                 {/* Status indicator for approvals on this question */}
                 {question.peerAnswers.some((p) => p.isApproved) ? (
                   <Badge variant="outline" className="text-[10px] border-emerald-200 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 font-medium">
@@ -1517,6 +1539,12 @@ function QuestionCollationCard({
                 <span className="text-xs font-bold text-emerald-900 dark:text-emerald-300">
                   Self-Evaluation: {employeeName}
                 </span>
+                <Badge
+                  variant="outline"
+                  className="text-[10px] font-semibold border-emerald-300/80 bg-emerald-100/60 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300"
+                >
+                  Self Review Q{question.selfQuestionNumber ?? question.order}
+                </Badge>
               </div>
               {question.selfAnswerSubmittedAt && (
                 <span className="text-[10px] text-muted-foreground flex items-center gap-1">
@@ -1529,11 +1557,19 @@ function QuestionCollationCard({
               )}
             </div>
 
+            {question.selfQuestionText && question.selfQuestionText !== question.questionText && (
+              <p className="text-[11px] text-muted-foreground/80 pl-7 italic">
+                Self Review Question {question.selfQuestionNumber ?? question.order}: &ldquo;{question.selfQuestionText}&rdquo;
+              </p>
+            )}
+
             <p className="text-xs text-foreground/90 leading-relaxed pl-7">
               {question.selfAnswer ? (
                 question.selfAnswer
               ) : (
-                <span className="italic text-muted-foreground">No self-assessment recorded for this question.</span>
+                <span className="italic text-muted-foreground">
+                  No self-assessment recorded for Self Review Q{question.selfQuestionNumber ?? question.order}.
+                </span>
               )}
             </p>
           </div>
@@ -1544,6 +1580,9 @@ function QuestionCollationCard({
               <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
                 <Users className="h-3.5 w-3.5 text-primary" />
                 Collated Peer Feedback ({question.peerAnswers.length})
+                <span className="text-[10px] font-normal normal-case text-muted-foreground ml-1">
+                  (Matched with Self Review Q{question.selfQuestionNumber ?? question.order})
+                </span>
               </h4>
               <span className="text-[11px] text-muted-foreground flex items-center gap-1">
                 {isAnonymized && <Lock className="h-2.5 w-2.5 text-muted-foreground" />}

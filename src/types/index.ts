@@ -28,7 +28,9 @@ export interface Review {
   status: 'draft' | 'pending_submission' | 'submitted' | 'completed'; // pending_submission for peer reviews assigned but not started
   dueDate?: string;
   reviewee?: User; // Person being reviewed
+  revieweeId?: string;
   reviewer?: User; // Person writing the review (relevant for peer reviews)
+  reviewerId?: string;
   questionnaireId: string;
   questions: Question[];
   answers?: Answer[];
@@ -143,6 +145,8 @@ export interface QuestionFeedbackCollation {
   category?: string;
   selfAnswer?: string;
   selfAnswerSubmittedAt?: string;
+  selfQuestionNumber?: number;
+  selfQuestionText?: string;
   peerAnswers: PeerQuestionResponse[];
   isApprovedForSharing?: boolean; // Convenience flag indicating whether any answers are approved
 }

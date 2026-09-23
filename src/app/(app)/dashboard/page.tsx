@@ -996,7 +996,7 @@ export default function DashboardPage() {
                                   {q.selfAnswer && (
                                     <div className="pl-7 text-xs p-2.5 rounded bg-emerald-50/30 border border-emerald-200/50 text-foreground">
                                       <span className="font-semibold text-emerald-800 dark:text-emerald-300 block text-[10px] mb-0.5">
-                                        Your Self-Assessment:
+                                        Your Self-Assessment (Self Review Q{q.selfQuestionNumber ?? q.order}):
                                       </span>
                                       <p className="italic text-foreground/90">&ldquo;{q.selfAnswer}&rdquo;</p>
                                     </div>
